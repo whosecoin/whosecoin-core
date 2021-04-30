@@ -15,9 +15,9 @@ struct transaction {
     buffer_t signature;
 };
 
-static buffer_t compute_hash(char *data, size_t length) {
+static buffer_t compute_hash(uint8_t *data, size_t length) {
     buffer_t hash = buffer_create(crypto_generichash_BYTES);
-    crypto_generichash((uint8_t *) hash.data, hash.length, (uint8_t *) data, length, NULL, 0);
+    crypto_generichash(hash.data, hash.length, data, length, NULL, 0);
     return hash;
 }
 

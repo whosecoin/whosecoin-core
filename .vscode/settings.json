@@ -63,6 +63,7 @@
         "settings.h": "c",
         "blockchain.h": "c",
         "pool.h": "c",
-        "miner.h": "c"
+        "miner.h": "c",
+        "stddef.h": "c"
     }
 }

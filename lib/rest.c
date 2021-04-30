@@ -25,7 +25,7 @@ void on_write(uv_write_t *req, int status) {
 
 void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     if (nread < 0) {
-        uv_close((uv_handle_t*) client, NULL);
+        uv_close((uv_handle_t*) client, (uv_close_cb) free);
     } else {
         char method[8] = {0};
         char url[2048] = {0};
@@ -53,7 +53,7 @@ void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 
 
                 uv_write_t *req = (uv_write_t *) malloc(sizeof(uv_write_t));
-                uv_buf_t wrbuf = uv_buf_init(message.data, message.length);
+                uv_buf_t wrbuf = uv_buf_init((char *) message.data, message.length);
                 uv_write(req, client, &wrbuf, 1, on_write);
                 dynamic_buffer_destroy(message);
                 handled = true;
@@ -86,7 +86,7 @@ void on_new_connection(uv_stream_t *server, int status) {
     if (uv_accept(server, (uv_stream_t*) client) == 0) {
         uv_read_start((uv_stream_t*)client, alloc_buffer, on_read);
     } else {
-        uv_close((uv_handle_t*) client, NULL);
+        uv_close((uv_handle_t*) client, (uv_close_cb) free);
     }
 }
 
@@ -98,6 +98,12 @@ rest_t *rest_create() {
     res->patterns = list_create(4);
     res->handlers = list_create(4);
     return res;
+}
+
+void rest_destroy(rest_t *rest) {
+    list_destroy(rest->patterns, NULL);
+    list_destroy(rest->handlers, NULL);
+    free(rest);
 }
 
 void rest_listen(rest_t *rest, int port) {

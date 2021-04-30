@@ -31,8 +31,8 @@ miner_t* miner;
 pool_t* pool;
 rest_t *rest;
 
-unsigned char pk[crypto_sign_PUBLICKEYBYTES];
-unsigned char sk[crypto_sign_SECRETKEYBYTES];
+uint8_t pk[crypto_sign_PUBLICKEYBYTES];
+uint8_t sk[crypto_sign_SECRETKEYBYTES];
 
 void on_sigint(uv_signal_t *handle, int signum) {
     uv_stop(loop);
@@ -41,11 +41,11 @@ void on_sigint(uv_signal_t *handle, int signum) {
 }
 
 buffer_t get_public_key() {
-    return (buffer_t){crypto_sign_PUBLICKEYBYTES, (char *) &pk};
+    return (buffer_t){crypto_sign_PUBLICKEYBYTES, pk};
 }
 
 buffer_t get_secret_key() {
-    return (buffer_t){crypto_sign_SECRETKEYBYTES, (char *) &sk};
+    return (buffer_t){crypto_sign_SECRETKEYBYTES, sk};
 }
 
 uint64_t elapsed_time(size_t a, size_t b) {
@@ -308,7 +308,7 @@ void on_extended(block_t *prev, block_t *block) {
     // print the account value at each block
     account_t *account = block_get_account(block, get_public_key());
     if (account != NULL) {
-      //  printf("value: %llu\n", account_get_value(account));
+      printf("value: %llu\n", account_get_value(account));
     }
 
     // If prev is not an ancestor of block, then a fork has overtaken the
@@ -346,6 +346,12 @@ void on_block_mined(miner_t *miner, block_t *block) {
     dynamic_buffer_destroy(buf);
 }
 
+/**
+ * Return true if the string is a valid hex representation of a hash
+ * and false otherwise.
+ * @param hex a hex string
+ * @return whether or not hex is a hash
+ */
 bool is_valid_hash(char *hex) {
     if (strlen(hex) != 2 * crypto_generichash_BYTES) return false;
     for (char *c = hex; *c != '\0'; c++) {
@@ -359,7 +365,7 @@ bool is_valid_hash(char *hex) {
  * Respond with a JSON array containing the principal blockchain.
  * Order the response by descending block height.
  */
-void on_rest_blocks_request(request_t *req, response_t *res) {
+void on_http_blocks_request(request_t *req, response_t *res) {
     dynamic_buffer_t *buf = response_get_body(res);
     block_t *block = blockchain_get_longest(blockchain);
     while (block != NULL) {
@@ -371,28 +377,36 @@ void on_rest_blocks_request(request_t *req, response_t *res) {
 }
 
 /*
- * GET /block/:/
- * Resond with a JSON object representation of the block with the given hash. 
+ * GET /block/:hash/
+ * Respond with a JSON representation of the block with the given hash. 
  * If the hash is invalid, respond with a 400 error code. 
  * If no block with the hash exists, response with a 404 error code.
  */
-void on_rest_block_request(request_t *req, response_t *res) {
+void on_http_block_request(request_t *req, response_t *res) {
     dynamic_buffer_t *buf = response_get_body(res);
     char *arg = request_get_param(req, 0);
     
+    // validate that the argument is a valid hex string of proper length.
     if (!is_valid_hash(arg)) {
         response_set_code(res, 400);
         return;
     }
 
+    // convert the hex string into a binary buffer.
     buffer_t hash = buffer_from_hex(arg);
+
+    // query the blockchain for a block with the given hash.
     block_t *block = blockchain_get_block(blockchain, hash);
+
+    // response with the block if it exists and 404 otherwise.
     if (block != NULL) {
         block_write_json(block, buf);
         json_write_end(buf);
     } else {
         response_set_code(res, 404);
     }
+
+    // clean up binary buffer.
     buffer_destroy(hash);
 }
 
@@ -409,10 +423,6 @@ int main(int argc, char **argv) {
     miner = miner_create(on_block_mined);
     pool = pool_create();
     
-    rest = rest_create();
-    rest_register(rest, "/block/", on_rest_blocks_request);
-    rest_register(rest, "/block/:/", on_rest_block_request);
-
     list_t *txns = list_create(1);
     block_t *block = block_create(NULL, txns);
     block_set_difficulty(block, compute_difficulty());
@@ -482,8 +492,15 @@ int main(int argc, char **argv) {
         }
     }
 
+    /*
+     * Create a REST server that exposes an API for querying JSON representations
+     * of the current blockchain state.
+     */
+    rest = rest_create();
+    rest_register(rest, "/block/", on_http_blocks_request);
+    rest_register(rest, "/block/:/", on_http_block_request);
     rest_listen(rest, 8080);
-    
+
     /*
      * Start the libuv event loop. This will take complete control over
      * program flow until uv_stop is called.
@@ -493,4 +510,5 @@ int main(int argc, char **argv) {
     miner_destroy(miner);
     blockchain_destroy(blockchain);
     pool_destroy(pool);
+    rest_destroy(rest);
 }

@@ -7,7 +7,7 @@
 
 typedef struct buffer {
     uint32_t length;
-    char *data;
+    uint8_t *data;
 } buffer_t;
 
 buffer_t buffer_read(FILE *file);
@@ -24,7 +24,7 @@ void buffer_destroy(buffer_t buffer);
 
 typedef struct dynamic_buffer {
     uint32_t length;
-    char *data;
+    uint8_t *data;
     uint32_t capacity;
 } dynamic_buffer_t;
 

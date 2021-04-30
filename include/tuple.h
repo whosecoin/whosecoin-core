@@ -24,7 +24,7 @@
 typedef struct tuple {
     uint8_t kind;
     list_t *elements;
-    char *start;
+    uint8_t *start;
     size_t length;
 } tuple_t;
 
@@ -63,7 +63,7 @@ void tuple_write_f32(dynamic_buffer_t*, float);
 void tuple_write_f64(dynamic_buffer_t*, double);
 void tuple_write_boolean(dynamic_buffer_t*, bool);
 void tuple_write_string(dynamic_buffer_t*, char*);
-void tuple_write_binary(dynamic_buffer_t*, size_t, char*);
+void tuple_write_binary(dynamic_buffer_t*, size_t, uint8_t*);
 void tuple_write_start(dynamic_buffer_t*);
 void tuple_write_end(dynamic_buffer_t*);
 

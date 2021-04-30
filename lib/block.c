@@ -12,7 +12,7 @@
 #define N_ACCOUNT_BUCKETS 16
 #define COINBASE_TRANSACTION 64
 
-static const uint8_t NULL_ACCOUNT[crypto_sign_PUBLICKEYBYTES] = {0};
+static uint8_t NULL_ACCOUNT[crypto_sign_PUBLICKEYBYTES] = {0};
 
 typedef struct account {
     uint64_t value;         // the value of the account
@@ -41,9 +41,9 @@ static int compare(void *h1, void *h2) {
     return memcmp(h1, h2, crypto_generichash_BYTES);
 }
 
-static buffer_t compute_hash(char *data, size_t length) {
+static buffer_t compute_hash(uint8_t *data, size_t length) {
     buffer_t hash = buffer_create(crypto_generichash_BYTES);
-    crypto_generichash((uint8_t *) hash.data, hash.length, (uint8_t *) data, length, NULL, 0);
+    crypto_generichash(hash.data, hash.length, data, length, NULL, 0);
     return hash;
 }
 
@@ -106,7 +106,7 @@ static bool are_transaction_valid(block_t *block) {
         }
     }
 
-    buffer_t null_public_key = (buffer_t){crypto_sign_PUBLICKEYBYTES, (char *) NULL_ACCOUNT};
+    buffer_t null_public_key = (buffer_t){crypto_sign_PUBLICKEYBYTES, NULL_ACCOUNT};
     account_t *null_account = map_get(block->accounts, null_public_key.data);
     if (null_account != NULL) {
         if (null_account->prev != NULL) {
@@ -359,8 +359,8 @@ int block_mine(block_t *block, volatile int *stop) {
 }
 
 buffer_t block_get_hash(block_t *block) {
-    static char null_hash[crypto_generichash_BYTES] = {0};
-    if (block == NULL) return (buffer_t) {crypto_generichash_BYTES, (char *) &null_hash};
+    static uint8_t null_hash[crypto_generichash_BYTES] = {0};
+    if (block == NULL) return (buffer_t) {crypto_generichash_BYTES, null_hash};
     if (!block->header_dirty) return block->hash;
     if (block->header_dirty && block->hash.data != NULL) buffer_destroy(block->hash);
 

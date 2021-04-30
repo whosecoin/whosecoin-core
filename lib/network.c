@@ -17,7 +17,7 @@ typedef struct peer {
     uv_tcp_t *socket;
     char addr[16];
     int port;
-    char *text;
+    uint8_t *text;
     size_t text_len;
 } peer_t;
 
@@ -36,11 +36,11 @@ struct shared_buffer_t {
     int ref_count;
 };
 
-static struct shared_buffer_t* shared_buffer_create(char *data, int len) {
+static struct shared_buffer_t* shared_buffer_create(uint8_t *data, int len) {
     struct shared_buffer_t *buf = (struct shared_buffer_t*) calloc(1, sizeof(struct shared_buffer_t));
-    char *base = malloc(len);
+    uint8_t *base = malloc(len);
     memcpy(base, data, len);
-    buf->data = uv_buf_init(base, len);
+    buf->data = uv_buf_init((char *) base, len);
     return buf;
 }
 
@@ -117,7 +117,7 @@ static void on_write(uv_write_t* wreq, int status) {
  * @param message the message to send
  * @param len the length of the message in bytes
  */
-static void broadcast_message(char *message, int len) {
+static void broadcast_message(uint8_t *message, int len) {
     struct shared_buffer_t *buf = shared_buffer_create(message, len);
     shared_buffer_retain(buf);
     for (size_t i = 0; i < list_size(peers); i++) {
@@ -130,7 +130,7 @@ static void broadcast_message(char *message, int len) {
     shared_buffer_release(buf);
 }
 
-static void send_message(char *message, int len, peer_t *peer) {
+static void send_message(uint8_t *message, int len, peer_t *peer) {
     struct shared_buffer_t *buf = shared_buffer_create(message, len);
     shared_buffer_retain(buf);
     struct write_context_t *req = (struct write_context_t*) malloc(sizeof(struct write_context_t));
@@ -139,36 +139,36 @@ static void send_message(char *message, int len, peer_t *peer) {
 }
 
 void network_broadcast(uint32_t type, buffer_t *buffer) {
-    char message[MESSAGE_HEADER_SIZE + buffer->length];
+    uint8_t message[MESSAGE_HEADER_SIZE + buffer->length];
     guid_t guid = guid_new();
-    message_set_magic((char *) &message, MESSAGE_MAGIC_NUMBER);
-    message_set_length((char *) &message, buffer->length);
-    message_set_guid((char *) &message, guid);
-    message_set_type((char *) &message, type);
-    memcpy((char *) &message + MESSAGE_HEADER_SIZE, buffer->data, buffer->length);
+    message_set_magic(message, MESSAGE_MAGIC_NUMBER);
+    message_set_length(message, buffer->length);
+    message_set_guid(message, guid);
+    message_set_type(message, type);
+    memcpy(message + MESSAGE_HEADER_SIZE, buffer->data, buffer->length);
 
     message_history_add(guid);
     broadcast_message(message, MESSAGE_HEADER_SIZE + buffer->length);
 }
 
 void network_send(uint32_t event, buffer_t *buffer, peer_t *peer) {
-    char message[MESSAGE_HEADER_SIZE + buffer->length];
+    uint8_t message[MESSAGE_HEADER_SIZE + buffer->length];
     guid_t guid = guid_null();
-    message_set_magic((char *) &message, MESSAGE_MAGIC_NUMBER);
-    message_set_length((char *) &message, buffer->length);
-    message_set_guid((char *) &message, guid);
-    message_set_type((char *) &message, event);
-    memcpy((char *) &message + MESSAGE_HEADER_SIZE, buffer->data, buffer->length);
+    message_set_magic(message, MESSAGE_MAGIC_NUMBER);
+    message_set_length(message, buffer->length);
+    message_set_guid(message, guid);
+    message_set_type(message, event);
+    memcpy(message + MESSAGE_HEADER_SIZE, buffer->data, buffer->length);
 
     message_history_add(guid);
     send_message(message, MESSAGE_HEADER_SIZE + buffer->length, peer);
 }
 
-static void handle_message(uv_tcp_t *peer, char *message, size_t len) {
+static void handle_message(uv_tcp_t *peer, uint8_t *message, size_t len) {
     guid_t guid = message_get_guid(message);
     uint32_t length = message_get_length(message);
     uint16_t type = message_get_type(message);
-    char *payload = message + MESSAGE_HEADER_SIZE;
+    uint8_t *payload = message + MESSAGE_HEADER_SIZE;
     buffer_t buffer = {length, payload};
     if (guid_is_null(guid)) {
         if (type < EVENT_COUNT && handlers[type]) {
@@ -265,8 +265,8 @@ static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
      * We will iterate over all messages currently stored in the buffer and
      * handle them one by one.
      */
-    char *text_end = data->text + data->text_len;
-    char *message_start = data->text;
+    uint8_t *text_end = data->text + data->text_len;
+    uint8_t *message_start = data->text;
     while (message_start + 2 * sizeof(uint32_t) <= text_end) {
         
         /* parse fields from message header */
@@ -301,7 +301,7 @@ static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
      */
     if (message_start != data->text) {
         int remainder_len = text_end - message_start;
-        char *remainder = (char *) malloc(remainder_len);
+        uint8_t *remainder = (uint8_t *) malloc(remainder_len);
         memcpy(remainder, message_start, remainder_len);
         free(data->text);
         data->text = remainder;

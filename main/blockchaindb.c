@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
     
     unsigned char pk[crypto_sign_PUBLICKEYBYTES];
     unsigned char sk[crypto_sign_SECRETKEYBYTES];
-    buffer_t public_key = {crypto_sign_PUBLICKEYBYTES, (char *) pk};
+    buffer_t public_key = {crypto_sign_PUBLICKEYBYTES, pk};
     crypto_sign_keypair(pk, sk);
 
     // create a blockchain that calls on_extended when the longest chain is extended

@@ -88,8 +88,8 @@ tuple_t* tuple_parse(buffer_t *buffer) {
     tuple->elements = list_create(1);
     tuple->start = buffer->data;
     
-    char* iter = buffer->data;
-    char* iter_end = iter + buffer->length;
+    uint8_t* iter = buffer->data;
+    uint8_t* iter_end = iter + buffer->length;
     
     // the first byte must be TUPLE_START
     if (*iter != TUPLE_START) return NULL;
@@ -130,7 +130,7 @@ tuple_t* tuple_parse(buffer_t *buffer) {
                 break;
             case TUPLE_STRING:
                 list_add(tuple->elements, iter++);
-                iter += strlen(iter) + 1;
+                iter += strlen((char *) iter) + 1;
                 break;
             case TUPLE_BINARY: {
                 list_add(tuple->elements, iter++);
@@ -214,7 +214,7 @@ void tuple_write_string(dynamic_buffer_t *file, char* v) {
     dynamic_buffer_write(v, strlen(v) + 1, file);
 }
 
-void tuple_write_binary(dynamic_buffer_t *file, size_t s, char* v) {
+void tuple_write_binary(dynamic_buffer_t *file, size_t s, uint8_t* v) {
     assert(file != NULL);
     dynamic_buffer_putc(TUPLE_BINARY, file);
     dynamic_buffer_write(&s, sizeof(uint32_t), file);
@@ -290,7 +290,7 @@ buffer_t tuple_get_binary(tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_BINARY);
     uint32_t *size = (uint32_t*)(element + 1);
-    char *data = (char *) size + sizeof(uint32_t);
+    uint8_t *data = (uint8_t *) size + sizeof(uint32_t);
     return (buffer_t) {*size, data};
 }
 
