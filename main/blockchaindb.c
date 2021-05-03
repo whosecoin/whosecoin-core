@@ -3,28 +3,10 @@
 #include <string.h>
 #include <assert.h>
 #include <sodium.h>
-#include <map.h>
+#include <util/map.h>
 #include <time.h>
 #include <blockchain.h>
 
-/*
-
-bool is_transaction_valid(tuple_t *tuple) {
-    assert(tuple != NULL);
-    if (tuple_size(tuple) != 3) return false;
-    if (tuple_get_type(tuple, 0) != TUPLE_BINARY) return false;
-    if (tuple_get_binary(tuple, 0).length != crypto_sign_PUBLICKEYBYTES) return false;
-    if (tuple_get_type(tuple, 1) != TUPLE_BINARY) return false;
-    if (tuple_get_binary(tuple, 1).length != crypto_sign_PUBLICKEYBYTES) return false;
-    if (tuple_get_type(tuple, 2) != TUPLE_U64) return false;
-    return true;
-}
-
-
-
-
-
-*/
 
 void on_extended(block_t *prev, block_t *block) {
     printf("%d\n", block_get_height(block));
@@ -44,7 +26,7 @@ int main(int argc, char **argv) {
 
     // create a chain of N blocks with a single coinbase transaction
     for (int i = 0; i < N; i++) {
-        block_t *prev_block = blockchain_get_longest(blockchain);
+        block_t *prev_block = blockchain_get_principal(blockchain);
         list_t *txns = list_create(1);
         list_add(txns, transaction_create_coinbase(public_key, 64));
         block_t *block = block_create(prev_block, txns);

@@ -1,13 +1,14 @@
 #include "block.h"
-#include "map.h"
 #include "transaction.h"
+
+#include "util/map.h"
+#include "util/json.h"
 
 #include <sodium.h>
 #include <assert.h>
 #include <stdbool.h>
 #include <time.h>
 #include <string.h>
-#include <json.h>
 
 #define N_ACCOUNT_BUCKETS 16
 #define COINBASE_TRANSACTION 64
@@ -106,7 +107,7 @@ static bool are_transaction_valid(block_t *block) {
         }
     }
 
-    buffer_t null_public_key = (buffer_t){crypto_sign_PUBLICKEYBYTES, NULL_ACCOUNT};
+    buffer_t null_public_key = (buffer_t){crypto_vrf_PUBLICKEYBYTES, NULL_ACCOUNT};
     account_t *null_account = map_get(block->accounts, null_public_key.data);
     if (null_account != NULL) {
         if (null_account->prev != NULL) {
@@ -403,10 +404,9 @@ size_t block_get_transaction_count(block_t *block) {
     return list_size(block->transactions);
 }
 
-void block_write(block_t *block, dynamic_buffer_t *buf) {
+void block_write_header(block_t *block, dynamic_buffer_t *buf) {
     buffer_t prev_block = block_get_hash(block->prev_block);
     buffer_t merkle_root = block_get_merkle_root(block);
-    tuple_write_start(buf);
     tuple_write_start(buf);
         tuple_write_u64(buf, block->timestamp);
         tuple_write_binary(buf, prev_block.length, prev_block.data);
@@ -415,6 +415,11 @@ void block_write(block_t *block, dynamic_buffer_t *buf) {
         tuple_write_u32(buf, block->difficulty);
         tuple_write_u32(buf, block->nonce);
     tuple_write_end(buf);
+}
+
+void block_write(block_t *block, dynamic_buffer_t *buf) {
+    tuple_write_start(buf);
+    block_write_header(block, buf);
     tuple_write_start(buf);
     for (size_t i = 0; i < list_size(block->transactions); i++) {
         transaction_t *txn = list_get(block->transactions, i);
@@ -424,6 +429,25 @@ void block_write(block_t *block, dynamic_buffer_t *buf) {
     tuple_write_end(buf);
 }
 
+void block_write_json_header(block_t *block, dynamic_buffer_t *buf) {
+    char *prev_hash = buffer_to_hex(block_get_hash(block_prev(block)));
+    char *merkle_root = buffer_to_hex(block_get_merkle_root(block));
+    json_write_object_start(buf);
+        json_write_key(buf, "timestamp");
+        json_write_number(buf, block_get_timestamp(block));
+        json_write_key(buf, "prev_block");
+        json_write_string(buf, prev_hash);
+        json_write_key(buf, "merkle_root");
+        json_write_string(buf, merkle_root);
+        json_write_key(buf, "difficulty");
+        json_write_number(buf, block_get_difficulty(block));
+        json_write_key(buf, "nonce");
+        json_write_number(buf, block_get_nonce(block));
+    json_write_object_end(buf);
+    free(prev_hash);
+    free(merkle_root);
+}
+
 bool block_has_ancestor(block_t *block, block_t *ancestor) {
     if (block == ancestor) return true;
     else if (block == NULL) return false;
@@ -431,26 +455,17 @@ bool block_has_ancestor(block_t *block, block_t *ancestor) {
     else return block_has_ancestor(block_prev(block), ancestor);
 }
 
-
 void block_write_json(block_t *block, dynamic_buffer_t *buf) {
     
     char *block_hash = buffer_to_hex(block_get_hash(block));
-    char *prev_hash = buffer_to_hex(block_get_hash(block_prev(block)));
-    char *merkle_root = buffer_to_hex(block_get_merkle_root(block));
 
     json_write_object_start(buf);
-    json_write_key(buf, "timestamp");
-    json_write_number(buf, block_get_timestamp(block));
-    json_write_key(buf, "hash");
-    json_write_string(buf, block_hash);
-    json_write_key(buf, "prev_hash");
-    json_write_string(buf, prev_hash);
-    json_write_key(buf, "merkle_root");
-    json_write_string(buf, merkle_root);
-    json_write_key(buf, "height");
-    json_write_number(buf, block_get_height(block));
-    json_write_key(buf, "difficulty");
-    json_write_number(buf, block_get_difficulty(block));
+        json_write_key(buf, "hash");
+        json_write_string(buf, block_hash);
+        json_write_key(buf, "height");
+        json_write_number(buf, block_get_height(block));
+        json_write_key(buf, "header");
+        block_write_json_header(block, buf);
     json_write_key(buf, "transactions");
     json_write_array_start(buf);
     for (size_t i = 0; i < block_get_transaction_count(block); i++) {
@@ -461,7 +476,4 @@ void block_write_json(block_t *block, dynamic_buffer_t *buf) {
     json_write_object_end(buf);
 
     free(block_hash);
-    free(prev_hash);
-    free(merkle_root);
-    
 }

@@ -2,7 +2,7 @@
 #include <sodium.h>
 #include <assert.h>
 #include <string.h>
-#include <json.h>
+#include "util/json.h"
 
 static const uint8_t NULL_ACCOUNT[crypto_sign_PUBLICKEYBYTES] = {0};
 

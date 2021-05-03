@@ -1,0 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;500&display=swap');
+
+body {
+    font-family: Inter, Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    font-weight: 300;
+}
+
+div.grid {
+    display: grid;
+    grid-template-columns: 50% 50%;
+    grid-template-rows: 400px;
+}
+
+div.row {
+    width: 100%;
+    display: flex;
+    border-bottom: 1px solid rgb(240, 242, 247);
+}
+
+div.container {
+    padding: 16px;
+}
+
+a {
+    color: rgb(25, 112, 239);
+}
+
+a.button {
+    display: inline-block;
+    padding: 8px 16px;
+    border: 1px solid rgb(240, 242, 247);
+    text-decoration: none;
+    font-weight: 500;
+    border-radius: 8px;
+    margin: 8px 0;
+}
+
+a.button:hover {
+    border: 1px solid rgb(25, 112, 239);
+}
+
+div.row span {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    padding: 8px 16px;
+    font-size: 14px;
+}

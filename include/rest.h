@@ -1,8 +1,8 @@
 #ifndef REST_H
 #define REST_H
 
-#include <buffer.h>
-#include <http.h>
+#include <util/buffer.h>
+#include <util/http.h>
 
 typedef struct rest rest_t;
 typedef void (*rest_handler)(request_t *req, response_t *res);

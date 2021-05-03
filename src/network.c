@@ -5,8 +5,8 @@
 #include <message.h>
 #include <settings.h>
 #include <message_history.h>
-#include <buffer.h>
-#include <list.h>
+#include "util/buffer.h"
+#include "util/list.h"
 
 uv_loop_t *loop;
 uv_tcp_t server;

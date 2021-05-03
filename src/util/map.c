@@ -1,5 +1,5 @@
-#include "map.h"
-#include "list.h"
+#include "util/map.h"
+#include "util/list.h"
 
 #include <assert.h>
 #include <string.h>

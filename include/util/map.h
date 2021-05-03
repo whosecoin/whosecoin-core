@@ -1,7 +1,7 @@
 #ifndef HASH_MAP_H
 #define HASH_MAP_H
 
-#include <buffer.h>
+#include "buffer.h"
 
 typedef struct map map_t;
 

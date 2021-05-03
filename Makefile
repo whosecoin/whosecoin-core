@@ -1,7 +1,7 @@
 CC = clang
 
-CFLAGS = -fsanitize=address -O0 -g -Iinclude -I/usr/local/include -L/usr/local/lib -lsodium -luv -Wall -Wno-unused-command-line-argument -pthread
-SRC_FILES = tuple buffer map list block transaction blockchain guid network message settings message_history miner pool rest json http
+CFLAGS = -fsanitize=address -O0 -g -Iinclude -I/usr/local/include -L/usr/local/lib -lsodium -luv  -Wall -Wno-unused-command-line-argument -pthread
+SRC_FILES = tuple util/buffer util/map util/list block transaction blockchain util/guid network message settings message_history miner pool rest util/json util/http
 OBJ_FILES = $(addprefix obj/,$(SRC_FILES:=.o))
 
 MAIN = blockchaindb main
@@ -11,13 +11,15 @@ LIBS =
 
 all: $(MAIN_BINS) $(TEST_BINS)
 
-obj/%.o: lib/%.c
+obj/%.o: src/%.c
 	$(CC) -c $(CFLAGS) $^ -o $@
 obj/%.o: main/%.c
 	$(CC) -c $(CFLAGS) $^ -o $@
 obj/%.o: tests/%.c
 	$(CC) -c $(CFLAGS) $^ -o $@
 
+lib/libsodium: 
+	
 bin/blockchaindb: obj/blockchaindb.o $(OBJ_FILES)
 	$(CC) $(CFLAGS) $(LIBS) $^ -o $@
 

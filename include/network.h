@@ -2,7 +2,7 @@
 #define NETWORK_H
 
 #include <uv.h>
-#include <buffer.h>
+#include <util/buffer.h>
 #include <tuple.h>
 
 extern uv_loop_t *loop;
@@ -29,6 +29,8 @@ enum {
     EVENT_TRANSACTION,
     EVENT_COUNT,
 };
+
+typedef struct network network_t;
 
 void network_init();
 void network_register(uint32_t event, event_handler_t handler);

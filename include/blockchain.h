@@ -1,8 +1,9 @@
 #ifndef BLOCKCHAIN_H
 #define BLOCKCHAIN_H
 
+#include <util/buffer.h>
+
 #include <block.h>
-#include <buffer.h>
 #include <transaction.h>
 
 typedef struct blockchain blockchain_t;

@@ -1,7 +1,7 @@
 #ifndef MESSAGE_HISTORY_H
 #define MESSAGE_HISTORY_H
 
-#include <guid.h>
+#include <util/guid.h>
 
 #define MESSAGE_HISTORY_SIZE 1024
 

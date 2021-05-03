@@ -1,7 +1,7 @@
 #ifndef TRANSACTION_H
 #define TRANSACTION_H
 
-#include <buffer.h>
+#include <util/buffer.h>
 #include <tuple.h>
 
 typedef struct transaction transaction_t;

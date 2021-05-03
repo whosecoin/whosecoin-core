@@ -1,7 +1,7 @@
 #include <sodium.h>
 #include <stdio.h>
 
-#include <guid.h>
+#include "util/guid.h"
 
 guid_t guid_new() {
     guid_t result;

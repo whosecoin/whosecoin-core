@@ -9,7 +9,6 @@
 #include <uv.h>
 #include <sodium.h>
 
-#include <guid.h>
 #include <message.h>
 #include <settings.h>
 #include <network.h>
@@ -17,10 +16,10 @@
 #include <blockchain.h>
 #include <miner.h>
 #include <pool.h>
-#include <http.h>
-
 #include <rest.h>
-#include <json.h>
+
+#include "util/http.h"
+#include "util/json.h"
 
 #define VERSION_STRING "1.0.0-alpha"
 #define BLOCK_TIME 5
@@ -31,8 +30,8 @@ miner_t* miner;
 pool_t* pool;
 rest_t *rest;
 
-uint8_t pk[crypto_sign_PUBLICKEYBYTES];
-uint8_t sk[crypto_sign_SECRETKEYBYTES];
+uint8_t pk[crypto_vrf_PUBLICKEYBYTES];
+uint8_t sk[crypto_vrf_SECRETKEYBYTES];
 
 void on_sigint(uv_signal_t *handle, int signum) {
     uv_stop(loop);
@@ -40,18 +39,26 @@ void on_sigint(uv_signal_t *handle, int signum) {
     printf("\rinfo: shutting down\n");
 }
 
+/**
+ * Return a buffer containing the global public key.
+ * @return a buffer containing the user's public key.
+ */
 buffer_t get_public_key() {
-    return (buffer_t){crypto_sign_PUBLICKEYBYTES, pk};
+    return (buffer_t){crypto_vrf_PUBLICKEYBYTES, pk};
 }
 
+/**
+ * Return a buffer containing the global secret key.
+ * @return a buffer containing the user's secret key.
+ */
 buffer_t get_secret_key() {
-    return (buffer_t){crypto_sign_SECRETKEYBYTES, sk};
+    return (buffer_t){crypto_vrf_SECRETKEYBYTES, sk};
 }
 
 uint64_t elapsed_time(size_t a, size_t b) {
     if (a == b) return BLOCK_TIME;
 
-    block_t *block_b = blockchain_get_longest(blockchain);
+    block_t *block_b = blockchain_get_principal(blockchain);
     while (block_get_height(block_b) != b) {
         block_b = block_prev(block_b);
     }
@@ -69,7 +76,7 @@ uint64_t elapsed_time(size_t a, size_t b) {
 
 uint32_t compute_difficulty() {
     size_t b = blockchain_height(blockchain);
-    block_t *block = blockchain_get_longest(blockchain);
+    block_t *block = blockchain_get_principal(blockchain);
     if (b < 2) return 16;
     if ((b + 1) % EPOCH_LENGTH != 0) return block_get_difficulty(block);
     size_t a = b > EPOCH_LENGTH ? b - EPOCH_LENGTH: 1;
@@ -154,7 +161,7 @@ void on_connect(peer_t *peer, tuple_t *msg) {
     dynamic_buffer_destroy(buf);
 
     synchronize_peers(peer);
-    synchronize_blockchain(peer, blockchain_get_longest(blockchain));
+    synchronize_blockchain(peer, blockchain_get_principal(blockchain));
 }
 
 // msg: (port: i32, version: string)
@@ -260,7 +267,7 @@ void on_blocks_response(peer_t *peer, tuple_t *msg) {
 void on_blocks_request(peer_t *peer, tuple_t *msg) {
     buffer_t hash = tuple_get_binary(msg, 0);
     block_t *block = lookup_block(hash);
-    block_t *iter = blockchain_get_longest(blockchain);
+    block_t *iter = blockchain_get_principal(blockchain);
     dynamic_buffer_t buf = dynamic_buffer_create(64);
     tuple_write_start(&buf);
     while (iter != block) {
@@ -367,7 +374,8 @@ bool is_valid_hash(char *hex) {
  */
 void on_http_blocks_request(request_t *req, response_t *res) {
     dynamic_buffer_t *buf = response_get_body(res);
-    block_t *block = blockchain_get_longest(blockchain);
+    block_t *block = blockchain_get_principal(blockchain);
+    json_write_array_start(buf);
     while (block != NULL) {
         block_write_json(block, buf);
         block = block_prev(block);
@@ -415,7 +423,7 @@ int main(int argc, char **argv) {
     parse_arguments(argc, argv);
 
     // generate a new public-private keypair
-    crypto_sign_keypair(pk, sk);
+    crypto_vrf_keypair(pk, sk);
 
     loop = uv_default_loop();
 

@@ -1,8 +1,8 @@
 #ifndef TUPLE_H
 #define TUPLE_H
 
-#include "buffer.h"
-#include "list.h"
+#include "util/buffer.h"
+#include "util/list.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>

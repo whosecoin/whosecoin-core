@@ -14,7 +14,7 @@ struct miner {
 };
 
 struct mining_result_t {
-    block_t *block;
+    tuple_t *block;
     miner_t *miner;
 };
 

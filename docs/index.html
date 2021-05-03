@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset='UTF-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src='https://unpkg.com/react@17.0.2/umd/react.production.min.js'></script>
+    <script src='https://unpkg.com/react-dom@17.0.2/umd/react-dom.production.min.js'></script>
+    <script src='https://unpkg.com/react-router-dom@5.0.0/umd/react-router-dom.min.js'></script>
+    <script src='https://unpkg.com/babel-standalone@6.26.0/babel.js'></script>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <div id='root'></div>
+    <script type='text/babel'>
+      const Link = ReactRouterDOM.Link;
+      const Route = ReactRouterDOM.Route;
+
+      const BlocksContext = React.createContext();
+      const BlocksProvider = ({children}) => {
+        const [blocks, setBlocks] = React.useState([]);
+        React.useEffect(() => {
+          const fetchData = async () => {
+            const result = await fetch('http://127.0.0.1:8080/block/');
+            setBlocks(await result.json());
+          };
+          fetchData();
+        }, []);
+        return <BlocksContext.Provider value={blocks}>{...children}</BlocksContext.Provider>
+      };
+
+      const App = () => (
+        <BlocksProvider>
+          <ReactRouterDOM.HashRouter>
+            <ul>
+              <li><Link to="/">Home</Link></li>
+              <li><Link to="/blocks">Blocks</Link></li>
+              <li><Link to="/blocks/:hash">Blocks</Link></li>
+              <li><Link to="/register">Register</Link></li>
+            </ul>
+
+            <Route exact path="/" exact component={Home} />
+            <Route exact path="/blocks" component={BlocksPage} />
+            <Route exact path="/blocks/:hash" component={BlockPage} />
+            <Route exact path="/register" component={Register} />
+          </ReactRouterDOM.HashRouter>
+        </BlocksProvider>
+      )
+
+      const Home = () => <h1>Home</h1>
+
+      const Block = ({height, hash, header}) => {
+        return (
+          <div className="row">
+            <span style={{flexBasis: 36}}>{height}</span>
+            <span style={{flexBasis: 0, flex: 1}}>
+              <Link to={`/blocks/${hash}`}>{hash}</Link>
+            </span>
+            <span style={{flexBasis: 36}}>{header.difficulty}</span>
+            <span style={{flexBasis: 60}}>{header.nonce}</span>
+            <span style={{flexBasis: 200}}>{new Date(1000 * header.timestamp).toISOString()}</span>
+          </div>
+        );
+      }
+
+      const BlocksPage = () => {
+        const blocks = React.useContext(BlocksContext);
+        return (
+          <div className="container">
+            <h1>Blocks</h1>
+            {blocks.map(b => <Block {...b}/>)}
+          </div>
+        );
+      }
+
+      const BlockPage = ({ match, location }) => {
+        const { params: { hash } } = match;
+        const blocks = React.useContext(BlocksContext);
+        const filterResult = blocks.filter(b => b.hash == hash);
+        if (filterResult.length == 0) return <div></div>;
+        const block = filterResult[0];
+        console.log(block)
+        return (
+          <div className="container">
+            <h1>Block {block.height}</h1>
+            <div className="row">
+              <span style={{flexBasis: 80}}>hash</span>
+              <span style={{flexBasis: 0, flex: 1}}>{block.hash}</span>
+            </div>
+            <div className="row">
+              <span style={{flexBasis: 80}}>prev_block</span>
+              <span style={{flexBasis: 0, flex: 1}}>{block.header.prev_block}</span>
+            </div>
+            <div className="row">
+              <span style={{flexBasis: 80}}>timestamp</span>
+              <span style={{flexBasis: 0, flex: 1}}>{block.header.timestamp}</span>
+            </div>
+            <div className="row">
+              <span style={{flexBasis: 80}}>difficulty</span>
+              <span style={{flexBasis: 0, flex: 1}}>{block.header.difficulty}</span>
+            </div>
+            <div className="row">
+              <span style={{flexBasis: 80}}>nonce</span>
+              <span style={{flexBasis: 0, flex: 1}}>{block.header.nonce}</span>
+            </div>
+          </div>
+        );
+      }
+      
+      const Register = () => <h1>Register</h1>
+
+      ReactDOM.render(<App />, document.querySelector('#root'));
+    </script>
+  </body>
+</html>

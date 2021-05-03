@@ -1,7 +1,7 @@
 #ifndef JSON_H
 #define JSON_H
 
-#include <buffer.h>
+#include "buffer.h"
 
 void json_write_object_start(dynamic_buffer_t *res);
 void json_write_object_end(dynamic_buffer_t *res);

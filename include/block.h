@@ -2,7 +2,7 @@
 #define BLOCK_H
 
 #include "tuple.h"
-#include "list.h"
+#include "util/list.h"
 #include "transaction.h"
 
 typedef struct block block_t;
@@ -159,11 +159,27 @@ uint64_t account_get_value(account_t *account);
 void block_write(block_t *block, dynamic_buffer_t *buf);
 
 /**
+ * Write a tuple representation of the block header to a dynamic buffer.
+ * 
+ * @param block the block
+ * @param buf the buffer
+ */
+void block_write_header(block_t *block, dynamic_buffer_t *buf);
+
+/**
  * Write a json representation of the block to a dynamic buffer. 
  *  
  * @param block the block
  * @param buf the buffer to write to
  */
 void block_write_json(block_t *block, dynamic_buffer_t *buf);
+
+/**
+ * Write a json representation of the block header to a dynamic buffer.
+ * 
+ * @param block the block
+ * @param buf the buffer
+ */
+void block_write_json_header(block_t *block, dynamic_buffer_t *buf);
 
 #endif /* BLOCK_H */

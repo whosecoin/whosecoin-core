@@ -1,6 +1,6 @@
-#include "http.h"
+#include "util/http.h"
 
-#include <list.h>
+#include "util/list.h"
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>

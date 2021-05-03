@@ -1,10 +1,11 @@
 #include "rest.h"
-#include "buffer.h"
+
+#include "util/buffer.h"
+#include "util/list.h"
 
 #include <uv.h>
 #include <assert.h>
 #include <stdlib.h>
-#include <list.h>
 
 #define BACKLOG 128
 
@@ -44,7 +45,7 @@ void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
                 char *reason = http_reason_phrase(status_code);
                 dynamic_buffer_t *body = response_get_body(res);
                 char header[2048] = {0};
-                sprintf(header, "HTTP/1.0 %d %s\r\nContent-Type: application/json\r\nContent-Length: %u\r\n\r\n", status_code, reason, body->length);
+                sprintf(header, "HTTP/1.0 %d %s\r\nContent-Type: application/json\r\nContent-Length: %u\r\nAccess-Control-Allow-Origin: *\r\n\r\n", status_code, reason, body->length);
                 dynamic_buffer_t message = dynamic_buffer_create(32);
                 dynamic_buffer_write(header, strlen(header), &message);
                 dynamic_buffer_write(body->data, body->length, &message);
@@ -62,7 +63,7 @@ void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
         }
         
         if (!handled) {
-            char header[2048] = "HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+            char header[2048] = "HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
             uv_write_t *req = (uv_write_t *) malloc(sizeof(uv_write_t));
             uv_buf_t wrbuf = uv_buf_init(header, strlen(header));
             uv_write(req, client, &wrbuf, 1, on_write);
