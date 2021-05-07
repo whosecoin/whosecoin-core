@@ -214,7 +214,7 @@ void tuple_write_string(dynamic_buffer_t *file, char* v) {
     dynamic_buffer_write(v, strlen(v) + 1, file);
 }
 
-void tuple_write_binary(dynamic_buffer_t *file, size_t s, uint8_t* v) {
+void tuple_write_binary(dynamic_buffer_t *file, size_t s, const uint8_t* v) {
     assert(file != NULL);
     dynamic_buffer_putc(TUPLE_BINARY, file);
     dynamic_buffer_write(&s, sizeof(uint32_t), file);

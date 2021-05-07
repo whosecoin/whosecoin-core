@@ -17,7 +17,12 @@ typedef struct account account_t;
  * @param prev the previous block in the hashchain
  * @param txns the transactions contained by the current block.
  */
-block_t* block_create(block_t *prev, list_t *txns);
+block_t* block_create(
+    const uint8_t *public_key,
+    const uint8_t *private_key,
+    block_t *prev, 
+    list_t *txns
+);
 
 /**
  * Create a block from its tuple representation using the given 'find' function
@@ -29,6 +34,10 @@ block_t* block_create(block_t *prev, list_t *txns);
  */
 block_t* block_create_from_tuple(tuple_t *tuple, block_t* (*find)(buffer_t));
 
+void block_add_child(block_t *block, block_t *child);
+uint8_t* block_get_seed(block_t *block);
+uint8_t* block_get_public_key(block_t *block);
+
 /**
  * Return true if the given ancestor is an ancestor of the given block. 
  * 
@@ -39,38 +48,6 @@ block_t* block_create_from_tuple(tuple_t *tuple, block_t* (*find)(buffer_t));
 bool block_has_ancestor(block_t *block, block_t *ancestor);
 
 /**
- * Set the nonce field of the specified block.
- * 
- * @param block the block
- * @param nonce the new nonce
- */
-void block_set_nonce(block_t *block, uint32_t nonce);
-
-/**
- * Set the timestamp field of the specified block.
- * 
- * @param block the block
- * @param timestamp the new timestamp
- */
-void block_set_timestamp(block_t *block, uint64_t timestamp);
-
-/**
- * Set the difficulty field of the specified block.
- * 
- * @param block the block
- * @param difficulty the new difficulty
- */
-void block_set_difficulty(block_t *block, uint32_t difficulty);
-
-/**
- * Return the nonce field of the specified block.
- * 
- * @param block the block
- * @return the nonce
- */
-uint32_t block_get_nonce(block_t *block);
-
-/**
  * Return the timestamp field of the specified block.
  * 
  * @param block the block
@@ -78,13 +55,7 @@ uint32_t block_get_nonce(block_t *block);
  */
 uint64_t block_get_timestamp(block_t *block);
 
-/**
- * Return the difficulty field of the specified block.
- * 
- * @param block the block
- * @return the difficulty
- */
-uint32_t block_get_difficulty(block_t *block);
+uint8_t* block_get_priority(block_t *block);
 
 /**
  * Return the hash of the block header.
@@ -92,7 +63,7 @@ uint32_t block_get_difficulty(block_t *block);
  * @param block the block
  * @return a buffer containing the hash
  */
-buffer_t block_get_hash(block_t *block);
+uint8_t* block_get_hash(block_t *block);
 
 /**
  * Return the previous block.
@@ -100,13 +71,7 @@ buffer_t block_get_hash(block_t *block);
  * @param block the block
  * @return the previous block
  */
-block_t* block_prev(block_t *block);
-
-/**
- * 
- * 
- */
-int block_mine(block_t *block, volatile int *stop);
+block_t* block_get_prev(block_t *block);
 
 /**
  * Return the merkle root of the block.
@@ -114,7 +79,7 @@ int block_mine(block_t *block, volatile int *stop);
  * @param block the block
  * @return a buffer containing the merkle root
  */
-buffer_t block_get_merkle_root(block_t *block);
+const uint8_t* block_get_merkle_root(block_t *block);
 
 /**
  * Return the height of the block. Note that this value is one indexed.
@@ -146,9 +111,24 @@ size_t block_get_transaction_count(block_t *block);
  */
 void block_destroy(block_t *block);
 
-account_t* block_get_account(block_t *block, buffer_t pub_key);
+/**
+ * Return the account associated with the given block and public key or
+ * NULL if no account matching the given public key exists at the given
+ * block.
+ * 
+ * @param block the block
+ * @param public_key the public key identifing an account.
+ * @return the account
+ */
+const account_t* block_get_account(const block_t *block, const uint8_t *public_key);
 
-uint64_t account_get_value(account_t *account);
+/**
+ * Return the value associated with the account.
+ * 
+ * @param account the account
+ * @return the value in the account.
+ */
+uint64_t account_get_value(const account_t *account);
 
 /**
  * Write a tuple representation of the block to a dynamic buffer. 

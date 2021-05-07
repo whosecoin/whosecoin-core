@@ -14,7 +14,7 @@
 #include <network.h>
 #include <tuple.h>
 #include <blockchain.h>
-#include <miner.h>
+// #include <miner.h>
 #include <pool.h>
 #include <rest.h>
 
@@ -25,8 +25,10 @@
 #define BLOCK_TIME 5
 #define EPOCH_LENGTH 16
 
+uv_timer_t timer_req;
+
 blockchain_t *blockchain;
-miner_t* miner;
+// miner_t* miner;
 pool_t* pool;
 rest_t *rest;
 
@@ -43,29 +45,30 @@ void on_sigint(uv_signal_t *handle, int signum) {
  * Return a buffer containing the global public key.
  * @return a buffer containing the user's public key.
  */
-buffer_t get_public_key() {
-    return (buffer_t){crypto_vrf_PUBLICKEYBYTES, pk};
+uint8_t* get_public_key() {
+    return pk;
 }
 
 /**
  * Return a buffer containing the global secret key.
  * @return a buffer containing the user's secret key.
  */
-buffer_t get_secret_key() {
-    return (buffer_t){crypto_vrf_SECRETKEYBYTES, sk};
+uint8_t* get_secret_key() {
+    return sk;
 }
 
+/*
 uint64_t elapsed_time(size_t a, size_t b) {
     if (a == b) return BLOCK_TIME;
 
     block_t *block_b = blockchain_get_principal(blockchain);
     while (block_get_height(block_b) != b) {
-        block_b = block_prev(block_b);
+        block_b = block_get_prev(block_b);
     }
 
     block_t *block_a = block_b;
     while (block_get_height(block_a) != a) {
-        block_a = block_prev(block_a);
+        block_a = block_get_prev(block_a);
     }
 
     uint64_t time_b = block_get_timestamp(block_b);
@@ -73,7 +76,9 @@ uint64_t elapsed_time(size_t a, size_t b) {
     uint64_t elapsed = time_b - time_a;
     return elapsed;
 }
+*/
 
+/*
 uint32_t compute_difficulty() {
     size_t b = blockchain_height(blockchain);
     block_t *block = blockchain_get_principal(blockchain);
@@ -89,6 +94,7 @@ uint32_t compute_difficulty() {
         return block_get_difficulty(block);
     }
 }
+*/
 
 /**
  * Retrieves a block by hash from the global blockchain object.
@@ -117,10 +123,10 @@ transaction_t* lookup_transaction(buffer_t hash) {
  * @param block the base of the branch to download 
  */
 void synchronize_blockchain(peer_t *peer, block_t *block) {
-    buffer_t hash = block_get_hash(block);
+    uint8_t *hash = block_get_hash(block);
     dynamic_buffer_t buf = dynamic_buffer_create(64);
     tuple_write_start(&buf);
-    tuple_write_binary(&buf, hash.length, hash.data);
+    tuple_write_binary(&buf, crypto_generichash_BYTES, hash);
     tuple_write_end(&buf);
     network_send(EVENT_BLOCKS_REQUEST, (buffer_t *) &buf, peer);
     dynamic_buffer_destroy(buf);
@@ -243,9 +249,33 @@ void on_peers_response(peer_t *peer, tuple_t *msg) {
  */
 void on_block(peer_t *peer, tuple_t *msg) {
     block_t *block = block_create_from_tuple(msg, lookup_block);
-    if (block != NULL) {
-        blockchain_add_block(blockchain, block);
+
+    if (block != NULL && blockchain_add_block(blockchain, block)) {
+        uint8_t* seed = block_get_seed(block);
+        uint8_t proof[crypto_vrf_PROOFBYTES];
+        uint8_t priority[crypto_vrf_OUTPUTBYTES];
+        crypto_vrf_prove(proof, get_secret_key(), seed, crypto_generichash_BYTES);
+        crypto_vrf_proof_to_hash(priority, proof);
+        if (!blockchain_has_block_with_priority(blockchain, priority)) {
+            block_t *prev = block_get_prev(block);
+            list_t *txns = list_create(1);
+            block_t *next = block_create(get_public_key(), get_secret_key(), prev, txns); 
+            if (next != NULL && blockchain_add_block(blockchain, next)) {
+                dynamic_buffer_t buf = dynamic_buffer_create(64);
+                block_write(next, &buf);
+                network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
+                dynamic_buffer_destroy(buf);
+            }
+        }
     }
+}
+
+
+void key_print(uint8_t *buffer) {
+    for (uint8_t i = 0; i < crypto_generichash_BYTES; i++) {
+        printf("%02x", (uint8_t) buffer[i]);
+    }
+    printf("\n");
 }
 
 /**
@@ -256,7 +286,27 @@ void on_blocks_response(peer_t *peer, tuple_t *msg) {
     for (size_t i = tuple_size(msg); i > 0; i -= 1) {
         tuple_t *block_tuple = tuple_get_tuple(msg, i - 1);
         block_t *block = block_create_from_tuple(block_tuple, lookup_block);
-        if (block != NULL) blockchain_add_block(blockchain, block);
+ 
+        if (block != NULL && blockchain_add_block(blockchain, block)) {
+            
+            uint8_t* seed = block_get_seed(block);
+            uint8_t proof[crypto_vrf_PROOFBYTES];
+            uint8_t priority[crypto_vrf_OUTPUTBYTES];
+            crypto_vrf_prove(proof, get_secret_key(), seed, crypto_generichash_BYTES);
+            crypto_vrf_proof_to_hash(priority, proof);
+
+            if (!blockchain_has_block_with_priority(blockchain, priority)) {
+                block_t *prev = block_get_prev(block);
+                list_t *txns = list_create(1);
+                block_t *next = block_create(get_public_key(), get_secret_key(), prev, txns); 
+                if (next != NULL && blockchain_add_block(blockchain, next)) {
+                    dynamic_buffer_t buf = dynamic_buffer_create(64);
+                    block_write(next, &buf);
+                    network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
+                    dynamic_buffer_destroy(buf);
+                }
+            }
+        }
     }
 }
 
@@ -270,9 +320,9 @@ void on_blocks_request(peer_t *peer, tuple_t *msg) {
     block_t *iter = blockchain_get_principal(blockchain);
     dynamic_buffer_t buf = dynamic_buffer_create(64);
     tuple_write_start(&buf);
-    while (iter != block) {
+    while (iter != block && iter != NULL) {
         block_write(iter, &buf);
-        iter = block_prev(iter);
+        iter = block_get_prev(iter);
     }
     tuple_write_end(&buf);
     network_send(EVENT_BLOCKS_RESPONSE, (buffer_t *) &buf, peer);
@@ -306,17 +356,33 @@ void on_transaction(peer_t *peer, tuple_t *msg) {
     }
 }
 
+void on_timer(uv_timer_t* handle) {
+    block_t *block = blockchain_get_principal(blockchain);
+    list_t *txns = list_create(1);
+    block_t *next_block = block_create(get_public_key(), get_secret_key(), block, txns);    
+    blockchain_add_block(blockchain, next_block);
+    dynamic_buffer_t buf = dynamic_buffer_create(64);
+    block_write(next_block, &buf);
+    network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
+    dynamic_buffer_destroy(buf);
+    
+}
+
 /**
  * As soon as the blockchain is extended, we should start mining a new block
  * extending the new longest chain.
  */
 void on_extended(block_t *prev, block_t *block) {
-    
+        
     // print the account value at each block
-    account_t *account = block_get_account(block, get_public_key());
-    if (account != NULL) {
-      printf("value: %llu\n", account_get_value(account));
+    block_t *last = block_get_prev(block);
+    if (last != NULL) {
+        account_t *account = block_get_account(last, get_public_key());
+        if (account != NULL) {
+            printf("value: %llu\n", account_get_value(account));
+        }
     }
+    
 
     // If prev is not an ancestor of block, then a fork has overtaken the
     // longest chain. This invalidates all transactions after the common
@@ -325,26 +391,21 @@ void on_extended(block_t *prev, block_t *block) {
     while (!block_has_ancestor(block, prev)) {
         for (size_t i = 0; i < block_get_transaction_count(prev); i++) {
             transaction_t *txn = block_get_transaction(prev, i);
-            if (!transaction_is_coinbase(txn)) {
-                pool_add(pool, txn);
-            }
+            pool_add(pool, txn);
         }
-        prev = block_prev(prev);
+        prev = block_get_prev(prev);
     }
 
-    uint32_t d = compute_difficulty();
-    list_t *txns = list_create(1);
-    transaction_t *txn = transaction_create_coinbase(get_public_key(), 64);
-    list_add(txns, txn);
-    block_t *next_block = block_create(block, txns);
-    block_set_difficulty(next_block, d);
-    miner_mine(miner, next_block);
+    uv_timer_stop(&timer_req);
+    uv_timer_start(&timer_req, on_timer, 3000, 0);
+
+   // miner_mine(miner, next_block);
 }
 
 /**
  * As soon as a block is mined, we should add it to our database and broadcast
  * it to our network.
- */
+
 void on_block_mined(miner_t *miner, block_t *block) {
     blockchain_add_block(blockchain, block);
     dynamic_buffer_t buf = dynamic_buffer_create(64);
@@ -352,6 +413,7 @@ void on_block_mined(miner_t *miner, block_t *block) {
     network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
     dynamic_buffer_destroy(buf);
 }
+ */
 
 /**
  * Return true if the string is a valid hex representation of a hash
@@ -378,7 +440,7 @@ void on_http_blocks_request(request_t *req, response_t *res) {
     json_write_array_start(buf);
     while (block != NULL) {
         block_write_json(block, buf);
-        block = block_prev(block);
+        block = block_get_prev(block);
     }
     json_write_array_end(buf);
     json_write_end(buf);
@@ -426,15 +488,13 @@ int main(int argc, char **argv) {
     crypto_vrf_keypair(pk, sk);
 
     loop = uv_default_loop();
-
+    uv_timer_init(loop, &timer_req);
     blockchain = blockchain_create(on_extended);
-    miner = miner_create(on_block_mined);
+    //miner = miner_create(on_block_mined);
     pool = pool_create();
     
-    list_t *txns = list_create(1);
-    block_t *block = block_create(NULL, txns);
-    block_set_difficulty(block, compute_difficulty());
-    miner_mine(miner, block);
+    //block_set_difficulty(block, compute_difficulty());
+    //miner_mine(miner, block);
 
     /* create a libuv event loop to manage asynchronous events */
     network_init();
@@ -509,13 +569,21 @@ int main(int argc, char **argv) {
     rest_register(rest, "/block/:/", on_http_block_request);
     rest_listen(rest, 8080);
 
+    list_t *txns = list_create(1);
+    block_t *block = block_create(get_public_key(), get_secret_key(), NULL, txns);
+    blockchain_add_block(blockchain, block);
+    dynamic_buffer_t buf = dynamic_buffer_create(64);
+    block_write(block, &buf);
+    network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
+    dynamic_buffer_destroy(buf);
+
     /*
      * Start the libuv event loop. This will take complete control over
      * program flow until uv_stop is called.
      */
     uv_run(loop, UV_RUN_DEFAULT);
 
-    miner_destroy(miner);
+    // miner_destroy(miner);
     blockchain_destroy(blockchain);
     pool_destroy(pool);
     rest_destroy(rest);

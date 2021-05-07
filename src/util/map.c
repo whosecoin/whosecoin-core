@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sodium.h>
 
 struct map {
     size_t n_buckets;
@@ -76,12 +77,16 @@ void* map_get(map_t *map, void *key) {
     return e->val;
 }
 
-int map_set(map_t *map, void *key, void *val) {
+void* map_set(map_t *map, void *key, void *val) {
+
     entry_t *old_entry = map_get_entry(map, key);
     if (old_entry != NULL) {
-        if (map->destroy_key) map->destroy_key(key);
-        if (map->destroy_val) map->destroy_val(val);
-        return 0;
+        void *old_key = old_entry->key;
+        void *old_val = old_entry->val;
+        old_entry->key = key;
+        old_entry->val = val;
+        if (map->destroy_key) map->destroy_key(old_key);
+        return old_val;
     }
 
     size_t i = map_get_bucket(map, key);
@@ -102,7 +107,24 @@ int map_set(map_t *map, void *key, void *val) {
         map->size += 1;
     }
 
-    return 1;
+    return NULL;
+}
+
+
+void* map_remove(map_t *map, void *key) {
+    assert(map != NULL);
+    size_t bi = map_get_bucket(map, key);
+    list_t *bucket = map->buckets[bi];
+    if (bucket == NULL) return NULL;
+    entry_t e = {key, NULL, map};
+    size_t ei = list_find(bucket, &e, (comparator_t) entry_compare);
+    if (ei == list_size(bucket)) return NULL;   
+    entry_t *entry = list_remove(bucket, ei);
+    void *old_key = entry->key;
+    void *val = entry->val;
+    if (map->destroy_key) map->destroy_key(old_key);
+    free(entry);
+    return val;
 }
 
 void map_destroy(map_t *map) {

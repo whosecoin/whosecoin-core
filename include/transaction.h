@@ -4,19 +4,36 @@
 #include <util/buffer.h>
 #include <tuple.h>
 
+/*
+ * A transaction represents a transfer of value from one entity to another.
+ * A transaction contains the public keys identifying the sender and the
+ * recipient of the transaction, the value transferred in the transaction,
+ * a signature to verify that the transaction was initiated by the sender,
+ * and a nonce value to distinguish otherwise identical transactions.
+ * 
+ * Two transactions are identical if they have the same hash value. 
+ * To prevent double spending, two identical transactions cannot be spent.
+ */
 typedef struct transaction transaction_t;
 
 /**
  * Create a signed transaction with the specified public and private keys
  * of the sender, public key of the recipient, and value.
  * 
- * @param private_key the private key of the sender.
  * @param public_key the public key of the sender.
+ * @param private_key the private key of the sender.
  * @param recipient the public key of the recipient.
- * @param v the value being transferred.
- * @return the transaction.
+ * @param value the value being transferred.
+ * @param nonce a unique identifing integer.
+ * @return the transaction
  */
-transaction_t* transaction_create(buffer_t private_key, buffer_t public_key, buffer_t recipient, uint64_t v);
+transaction_t* transaction_create(
+    const uint8_t *public_key,
+    const uint8_t *private_key,
+    const uint8_t *recipient,
+    uint64_t value,
+    uint32_t nonce
+);
 
 /**
  * Create a transaction from its tuple representation. Return NULL if the
@@ -26,17 +43,9 @@ transaction_t* transaction_create(buffer_t private_key, buffer_t public_key, buf
  * @param tuple the tuple representation of the transaction
  * @return the transaction
  */
-transaction_t* transaction_create_from_tuple(tuple_t *tuple);
+transaction_t* transaction_create_from_tuple(const tuple_t *tuple);
 
-/**
- * Create a coinbase transaction with the specified value. A coinbase
- * transaction is a transaction whose sender is the zero address and signature.
- * 
- * @param recipient the public key of the recipient
- * @param v the value of the transaction
- * @return the transaction.
- */
-transaction_t* transaction_create_coinbase(buffer_t recipient, uint64_t v);
+bool transaction_is_valid(const tuple_t *tuple);
 
 /**
  * Return a buffer containing the public key of the transaction sender.
@@ -44,7 +53,7 @@ transaction_t* transaction_create_coinbase(buffer_t recipient, uint64_t v);
  * @param txn the transaction
  * @return the public key of the transaction sender.
  */
-buffer_t transaction_get_sender(transaction_t *txn);
+const uint8_t* transaction_get_sender(const transaction_t *txn);
 
 /**
  * Return a buffer containing the public key of the transaction recipient.
@@ -52,7 +61,7 @@ buffer_t transaction_get_sender(transaction_t *txn);
  * @param txn the transaction
  * @return the public key of the transaction recipient.
  */
-buffer_t transaction_get_recipient(transaction_t *txn);
+const uint8_t* transaction_get_recipient(const transaction_t *txn);
 
 /**
  * Return a buffer containing the transaction signature.
@@ -60,7 +69,7 @@ buffer_t transaction_get_recipient(transaction_t *txn);
  * @param txn the transaction
  * @return the transaction signature.
  */
-buffer_t transaction_get_signature(transaction_t *txn);
+const uint8_t* transaction_get_signature(const transaction_t *txn);
 
 /**
  * Return the value exchanged in the transaction.
@@ -68,7 +77,7 @@ buffer_t transaction_get_signature(transaction_t *txn);
  * @param txn the transaction
  * @return the transaction value.
  */
-uint64_t transaction_get_value(transaction_t *txn);
+uint64_t transaction_get_value(const transaction_t *txn);
 
 /**
  * Return the nonce of the transaction.
@@ -76,7 +85,7 @@ uint64_t transaction_get_value(transaction_t *txn);
  * @param txn the transaction
  * @return the transaction nonce.
  */
-uint32_t transaction_get_nonce(transaction_t *txn);
+uint32_t transaction_get_nonce(const transaction_t *txn);
 
 /**
  * Return a buffer containing the transaction hash.
@@ -84,27 +93,7 @@ uint32_t transaction_get_nonce(transaction_t *txn);
  * @param txn the transaction
  * @return the transaction hash.
  */
-buffer_t transaction_get_hash(transaction_t *txn);
-
-/**
- * Return true if the transaction signature is a valid signature of the
- * transaction hash by the sender of the transaction.
- * 
- * @param txn the transaction
- * @return a boolean indicating whether or not txn has a valid signature.
- */
-bool transaction_is_signed(transaction_t *txn);
-
-/**
- * Return true of the transaction is a coinbase transaction and false
- * otherwise. A transaction is a coinbase transaction if and only if the
- * sender of the transaction is the zero address.
- *
- * @param txn the transaction
- * @return a boolean indicating whether or not txn is coinbase.
- * 
- */
-bool transaction_is_coinbase(transaction_t *txn);
+const uint8_t* transaction_get_hash(const transaction_t *txn);
 
 /**
  * Destroy the transaction and free all associated memory.
@@ -114,21 +103,12 @@ bool transaction_is_coinbase(transaction_t *txn);
 void transaction_destroy(transaction_t *txn);
 
 /**
- * Validate a tuple representation of a signed transaction. Check that it
- * contains exactly the right number of elements and types.
- * 
- * @param tuple the tuple
- * @return a boolean indicating whether the tuple is valid.
- */
-bool transaction_is_valid(tuple_t *tuple);
-
-/**
  * Write a tuple representation of the transaction to a dynamic buffer.
  * 
  * @param txn the transaction
  * @param buf the buf.
  */
-void transaction_write(transaction_t *txn, dynamic_buffer_t *buf);
+void transaction_write(const transaction_t *txn, dynamic_buffer_t *buf);
 
 /**
  * Write a json representation of the transaction to a dynamic buffer.
@@ -136,6 +116,6 @@ void transaction_write(transaction_t *txn, dynamic_buffer_t *buf);
  * @param txn the transaction
  * @param buf the buf.
  */
-void transaction_write_json(transaction_t *txn, dynamic_buffer_t *buf);
+void transaction_write_json(const transaction_t *txn, dynamic_buffer_t *buf);
 
 #endif /* TRANSACTION_H */

@@ -2,15 +2,17 @@
 #include "util/list.h"
 #include <transaction.h>
 #include <assert.h>
+#include <string.h>
+#include <sodium.h>
 
 struct pool {
     list_t *list;
 };
 
 int transaction_compare(transaction_t *txn1, transaction_t *txn2) {
-    buffer_t b1 = transaction_get_hash(txn1);
-    buffer_t b2 = transaction_get_hash(txn2);
-    return buffer_compare(&b1, &b2);
+    const uint8_t *b1 = transaction_get_hash(txn1);
+    const uint8_t *b2 = transaction_get_hash(txn2);
+    return memcmp(b1, b2, crypto_generichash_BYTES);
 }
 
 pool_t* pool_create() {

@@ -15,12 +15,19 @@ typedef struct rest {
     list_t *handlers;
 } rest_t;
 
+typedef struct write_context {
+  uv_write_t req;
+  uv_buf_t buf;
+} write_context_t;
+
 void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
     buf->base = (char*)malloc(suggested_size);
     buf->len = suggested_size;
 }
 
-void on_write(uv_write_t *req, int status) {
+void on_write(uv_write_t *wreq, int status) {
+    write_context_t *req = (write_context_t *) wreq;
+    free(req->buf.base);
     free(req);
 }
 
@@ -53,10 +60,9 @@ void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
                 response_destroy(res);
 
 
-                uv_write_t *req = (uv_write_t *) malloc(sizeof(uv_write_t));
-                uv_buf_t wrbuf = uv_buf_init((char *) message.data, message.length);
-                uv_write(req, client, &wrbuf, 1, on_write);
-                dynamic_buffer_destroy(message);
+                write_context_t *req = malloc(sizeof(write_context_t));
+                req->buf = uv_buf_init((char *) message.data, message.length);
+                uv_write(req, client, &req->buf, 1, on_write);
                 handled = true;
                 break;
             }
