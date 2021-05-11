@@ -16,21 +16,22 @@
 #include <blockchain.h>
 // #include <miner.h>
 #include <pool.h>
-#include <rest.h>
 
 #include "util/http.h"
 #include "util/json.h"
 
 #define VERSION_STRING "1.0.0-alpha"
-#define BLOCK_TIME 5
+#define BLOCK_TIME 3
 #define EPOCH_LENGTH 16
 
 uv_timer_t timer_req;
 
+uv_tty_t tty_in;
+
 blockchain_t *blockchain;
 // miner_t* miner;
 pool_t* pool;
-rest_t *rest;
+http_t *http;
 
 uint8_t pk[crypto_vrf_PUBLICKEYBYTES];
 uint8_t sk[crypto_vrf_SECRETKEYBYTES];
@@ -57,44 +58,17 @@ uint8_t* get_secret_key() {
     return sk;
 }
 
-/*
-uint64_t elapsed_time(size_t a, size_t b) {
-    if (a == b) return BLOCK_TIME;
-
-    block_t *block_b = blockchain_get_principal(blockchain);
-    while (block_get_height(block_b) != b) {
-        block_b = block_get_prev(block_b);
-    }
-
-    block_t *block_a = block_b;
-    while (block_get_height(block_a) != a) {
-        block_a = block_get_prev(block_a);
-    }
-
-    uint64_t time_b = block_get_timestamp(block_b);
-    uint64_t time_a = block_get_timestamp(block_a);
-    uint64_t elapsed = time_b - time_a;
-    return elapsed;
+/**
+ * Send the block to all neighbors in the network.
+ * @param block the block
+ */
+void broadcast_block(block_t *block) {
+    assert(block != NULL);
+    dynamic_buffer_t buf = dynamic_buffer_create(64);
+    block_write(block, &buf);
+    network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
+    dynamic_buffer_destroy(buf);
 }
-*/
-
-/*
-uint32_t compute_difficulty() {
-    size_t b = blockchain_height(blockchain);
-    block_t *block = blockchain_get_principal(blockchain);
-    if (b < 2) return 16;
-    if ((b + 1) % EPOCH_LENGTH != 0) return block_get_difficulty(block);
-    size_t a = b > EPOCH_LENGTH ? b - EPOCH_LENGTH: 1;
-    uint64_t elapsed = elapsed_time(a, b);
-    if (elapsed > BLOCK_TIME * (b - a)) {
-        return block_get_difficulty(block) - 1;
-    } else if (elapsed < BLOCK_TIME * (b - a)) {
-        return block_get_difficulty(block) + 1;
-    } else {
-        return block_get_difficulty(block);
-    }
-}
-*/
 
 /**
  * Retrieves a block by hash from the global blockchain object.
@@ -248,34 +222,32 @@ void on_peers_response(peer_t *peer, tuple_t *msg) {
  * block from a peer, we should validate it and add it to our blockchain.
  */
 void on_block(peer_t *peer, tuple_t *msg) {
-    block_t *block = block_create_from_tuple(msg, lookup_block);
 
+    /* Attempt to parse the message into a block */
+    block_t *block = block_create_from_tuple(msg, lookup_block);
+    /* If the message was not malformed and is not yet in the block database */ 
     if (block != NULL && blockchain_add_block(blockchain, block)) {
-        uint8_t* seed = block_get_seed(block);
-        uint8_t proof[crypto_vrf_PROOFBYTES];
-        uint8_t priority[crypto_vrf_OUTPUTBYTES];
-        crypto_vrf_prove(proof, get_secret_key(), seed, crypto_generichash_BYTES);
-        crypto_vrf_proof_to_hash(priority, proof);
-        if (!blockchain_has_block_with_priority(blockchain, priority)) {
-            block_t *prev = block_get_prev(block);
+       
+        /* 
+         * Attempt to fork the blockchain. This will only succeed if priority
+         * is lower than all other forks.
+         */
+        block_t *prev = block_get_prev(block);
+        if (prev != NULL && block_get_child_with_public_key(prev, get_public_key()) == NULL) {
             list_t *txns = list_create(1);
+            while (pool_size(pool) != 0) {
+                transaction_t *txn = pool_remove(pool, 0);
+                list_add(txns, txn);
+            }
             block_t *next = block_create(get_public_key(), get_secret_key(), prev, txns); 
             if (next != NULL && blockchain_add_block(blockchain, next)) {
-                dynamic_buffer_t buf = dynamic_buffer_create(64);
-                block_write(next, &buf);
-                network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
-                dynamic_buffer_destroy(buf);
+                broadcast_block(next);
+            }  else {
+                printf("invalid block\n");
             }
         }
-    }
-}
 
-
-void key_print(uint8_t *buffer) {
-    for (uint8_t i = 0; i < crypto_generichash_BYTES; i++) {
-        printf("%02x", (uint8_t) buffer[i]);
     }
-    printf("\n");
 }
 
 /**
@@ -283,28 +255,34 @@ void key_print(uint8_t *buffer) {
  * block from a peer, we should validate it and add it to our blockchain.
  */
 void on_blocks_response(peer_t *peer, tuple_t *msg) {
+
+    /* Iterate through all blocks from earliest to latest */
     for (size_t i = tuple_size(msg); i > 0; i -= 1) {
+        
+        /* Attempt to parse the message into a block */
         tuple_t *block_tuple = tuple_get_tuple(msg, i - 1);
         block_t *block = block_create_from_tuple(block_tuple, lookup_block);
  
+        /* If the message was not malformed and is not yet in the block database */ 
         if (block != NULL && blockchain_add_block(blockchain, block)) {
             
-            uint8_t* seed = block_get_seed(block);
-            uint8_t proof[crypto_vrf_PROOFBYTES];
-            uint8_t priority[crypto_vrf_OUTPUTBYTES];
-            crypto_vrf_prove(proof, get_secret_key(), seed, crypto_generichash_BYTES);
-            crypto_vrf_proof_to_hash(priority, proof);
-
-            if (!blockchain_has_block_with_priority(blockchain, priority)) {
-                block_t *prev = block_get_prev(block);
+            /* 
+            * Attempt to fork the blockchain. This will only succeed if priority
+            * is lower than all other forks.
+            */
+            block_t *prev = block_get_prev(block);
+            if (prev != NULL && block_get_child_with_public_key(prev, get_public_key()) == NULL) {
                 list_t *txns = list_create(1);
+                while (pool_size(pool) != 0) {
+                    transaction_t *txn = pool_remove(pool, 0);
+                    list_add(txns, txn);
+                }
                 block_t *next = block_create(get_public_key(), get_secret_key(), prev, txns); 
                 if (next != NULL && blockchain_add_block(blockchain, next)) {
-                    dynamic_buffer_t buf = dynamic_buffer_create(64);
-                    block_write(next, &buf);
-                    network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
-                    dynamic_buffer_destroy(buf);
-                }
+                    broadcast_block(next);
+                } else {
+                printf("invalid block\n");
+            }
             }
         }
     }
@@ -329,6 +307,10 @@ void on_blocks_request(peer_t *peer, tuple_t *msg) {
     dynamic_buffer_destroy(buf);
 }
 
+/**
+ * Synchronize pool of pending transactions with peer by sending entire pool
+ * to peer. 
+ */
 void on_pool_request(peer_t *peer, tuple_t *msg) {
     dynamic_buffer_t buf = dynamic_buffer_create(64);
     tuple_write_start(&buf);
@@ -341,6 +323,10 @@ void on_pool_request(peer_t *peer, tuple_t *msg) {
     dynamic_buffer_destroy(buf);
 }
 
+/**
+ * Synchronize pool of pending transactions with peer. Parse all transactions
+ * sent by peer and add them to the pool if they are valid.
+ */
 void on_pool_response(peer_t *peer, tuple_t *msg) {
     for (size_t i = 0; i < tuple_size(msg); i += 1) {
         tuple_t *txn_tuple = tuple_get_tuple(msg, i);
@@ -349,6 +335,10 @@ void on_pool_response(peer_t *peer, tuple_t *msg) {
     }
 }
 
+/**
+ * When a transaction is recieved, add it to the pool of pending tramsactions
+ * if valid.
+ */
 void on_transaction(peer_t *peer, tuple_t *msg) {
     transaction_t *txn = transaction_create_from_tuple(msg);
     if (txn != NULL) {
@@ -356,16 +346,27 @@ void on_transaction(peer_t *peer, tuple_t *msg) {
     }
 }
 
+/**
+ * Once per second, we attempt to append a new block onto the principal leaf node of
+ * the blockchain. Before doings so, we should make sure that we have not already
+ * created a block from this node.
+ */
 void on_timer(uv_timer_t* handle) {
-    block_t *block = blockchain_get_principal(blockchain);
-    list_t *txns = list_create(1);
-    block_t *next_block = block_create(get_public_key(), get_secret_key(), block, txns);    
-    blockchain_add_block(blockchain, next_block);
-    dynamic_buffer_t buf = dynamic_buffer_create(64);
-    block_write(next_block, &buf);
-    network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
-    dynamic_buffer_destroy(buf);
-    
+    block_t *block = blockchain_get_principal(blockchain); 
+    if (block != NULL && block_get_child_with_public_key(block, get_public_key()) == NULL) {
+        list_t *txns = list_create(1);
+        while (pool_size(pool) != 0) {
+            transaction_t *txn = pool_remove(pool, 0);
+            list_add(txns, txn);
+        }
+        block_t *next = block_create(get_public_key(), get_secret_key(), block, txns); 
+        if (next != NULL) {
+            blockchain_add_block(blockchain, next);
+            broadcast_block(next);    
+        } else {
+            printf("invalid block\n");
+        }
+    }   
 }
 
 /**
@@ -373,17 +374,7 @@ void on_timer(uv_timer_t* handle) {
  * extending the new longest chain.
  */
 void on_extended(block_t *prev, block_t *block) {
-        
-    // print the account value at each block
-    block_t *last = block_get_prev(block);
-    if (last != NULL) {
-        account_t *account = block_get_account(last, get_public_key());
-        if (account != NULL) {
-            printf("value: %llu\n", account_get_value(account));
-        }
-    }
     
-
     // If prev is not an ancestor of block, then a fork has overtaken the
     // longest chain. This invalidates all transactions after the common
     // ancestor of the fork. We should add all of these transactions back to
@@ -397,23 +388,10 @@ void on_extended(block_t *prev, block_t *block) {
     }
 
     uv_timer_stop(&timer_req);
-    uv_timer_start(&timer_req, on_timer, 3000, 0);
+    uv_timer_start(&timer_req, on_timer, 1000 * BLOCK_TIME, 0);
 
-   // miner_mine(miner, next_block);
 }
 
-/**
- * As soon as a block is mined, we should add it to our database and broadcast
- * it to our network.
-
-void on_block_mined(miner_t *miner, block_t *block) {
-    blockchain_add_block(blockchain, block);
-    dynamic_buffer_t buf = dynamic_buffer_create(64);
-    block_write(block, &buf);
-    network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
-    dynamic_buffer_destroy(buf);
-}
- */
 
 /**
  * Return true if the string is a valid hex representation of a hash
@@ -480,6 +458,92 @@ void on_http_block_request(request_t *req, response_t *res) {
     buffer_destroy(hash);
 }
 
+static void alloc_read_buffer(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
+    char *base = (char *) calloc(1, size);
+    if (!base) {
+        *buf = uv_buf_init(NULL, 0);
+    } else {
+        *buf = uv_buf_init(base, size);
+    }
+}
+
+static char* binary_to_hex(const uint8_t *data, size_t size) {
+    char* res = calloc(1, size * 2 + 1);
+    for (uint8_t i = 0; i < size; i++) {
+        sprintf(res + 2 * i, "%02x", data[i]);
+    }
+    return res;
+} 
+
+static uint8_t* hex_to_binary(const char *data, size_t size) {
+    if (strlen(data) != 2 * size) return NULL;
+    uint8_t* res = calloc(1, size);
+    for (uint8_t i = 0; i < size; i++) {
+        int x;
+        sscanf(data + 2 * i, "%02x", &x);
+        res[i] = (uint8_t) x;
+    }
+    return res;
+} 
+
+void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
+    if (nread == -1) {
+        fprintf(stderr, "Read Error!\n");
+    }
+    else {
+        if (nread > 0) {
+            char command[nread];
+            memcpy(command, buf->base, nread);
+            command[nread - 1] = '\0';
+            
+            if (strstr(command, "value") == command) {
+                block_t *principal = blockchain_get_principal(blockchain);
+                account_t *account = block_get_account(principal, get_public_key());
+                if (account != NULL) {
+                    uint64_t value = account_get_value(account);
+                    printf("%llu\n", value);
+                } else {
+                    printf("0\n");
+                }
+            } else if (strstr(command, "public_key") == command) {
+                uint8_t *pk = get_public_key();
+                char *pk_hex = binary_to_hex(pk, crypto_vrf_PUBLICKEYBYTES);
+                printf("%s\n", pk_hex);
+                free(pk_hex);
+            } else if (strstr(command, "send") == command) {
+                char recipient_hex[2 * crypto_vrf_PUBLICKEYBYTES + 1] = {0};
+                uint64_t value = 0;
+                static_assert(crypto_vrf_PUBLICKEYBYTES == 32, "invalid assumption in scanf");
+                int res = sscanf(command, "send %llu %64s", &value, recipient_hex);
+                if (res == 2) {
+                    uint8_t *recipient = hex_to_binary(recipient_hex, crypto_vrf_PUBLICKEYBYTES);
+                    transaction_t *txn = transaction_create(get_public_key(), get_secret_key(), recipient, value, 0);
+                    if (txn != NULL) {
+                        pool_add(pool, txn);
+                    } else {
+                        printf("invalid transaction\n");
+                    }
+                    free(recipient);
+                }
+            } else if (strstr(command, "pool") == command) {
+                size_t size = pool_size(pool);
+                printf("%d pending transations\n", size);
+                for (size_t i = 0; i < size; i++) {
+                    transaction_t *txn = pool_get(pool, i);
+                    dynamic_buffer_t buf = dynamic_buffer_create(32);
+                    transaction_write_json(txn, &buf);
+                    json_write_end(&buf);
+                    printf("%.*s\n", buf.length, buf.data);
+                    dynamic_buffer_destroy(buf);
+                }
+            } else {
+                printf("unknown command '%s'\n", command);
+            }
+        }
+    } 
+    if (buf->base) free(buf->base);
+}
+
 int main(int argc, char **argv) {
    
     parse_arguments(argc, argv);
@@ -489,6 +553,9 @@ int main(int argc, char **argv) {
 
     loop = uv_default_loop();
     uv_timer_init(loop, &timer_req);
+    uv_tty_init(loop, &tty_in, STDIN_FILENO, true);
+    uv_read_start((uv_stream_t*)&tty_in, alloc_read_buffer, read_stdin);
+
     blockchain = blockchain_create(on_extended);
     //miner = miner_create(on_block_mined);
     pool = pool_create();
@@ -498,7 +565,6 @@ int main(int argc, char **argv) {
 
     /* create a libuv event loop to manage asynchronous events */
     network_init();
-
 
     /* 
      * Register signal handler for SIGINT. When the user manually kills the
@@ -564,19 +630,18 @@ int main(int argc, char **argv) {
      * Create a REST server that exposes an API for querying JSON representations
      * of the current blockchain state.
      */
-    rest = rest_create();
-    rest_register(rest, "/block/", on_http_blocks_request);
-    rest_register(rest, "/block/:/", on_http_block_request);
-    rest_listen(rest, 8080);
+    http = http_create();
+    http_register(http, "/block/", on_http_blocks_request);
+    http_register(http, "/block/:/", on_http_block_request);
+    http_listen(http, 8080);
 
     list_t *txns = list_create(1);
     block_t *block = block_create(get_public_key(), get_secret_key(), NULL, txns);
-    blockchain_add_block(blockchain, block);
-    dynamic_buffer_t buf = dynamic_buffer_create(64);
-    block_write(block, &buf);
-    network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
-    dynamic_buffer_destroy(buf);
-
+    if (block != NULL) {
+        blockchain_add_block(blockchain, block);
+        broadcast_block(block);
+    }
+    
     /*
      * Start the libuv event loop. This will take complete control over
      * program flow until uv_stop is called.
@@ -586,5 +651,5 @@ int main(int argc, char **argv) {
     // miner_destroy(miner);
     blockchain_destroy(blockchain);
     pool_destroy(pool);
-    rest_destroy(rest);
+    http_destroy(http);
 }

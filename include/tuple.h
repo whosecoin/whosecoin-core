@@ -67,17 +67,17 @@ void tuple_write_binary(dynamic_buffer_t*, size_t, const uint8_t*);
 void tuple_write_start(dynamic_buffer_t*);
 void tuple_write_end(dynamic_buffer_t*);
 
-uint8_t tuple_get_type(tuple_t *tuple, size_t i);
-int32_t tuple_get_i32(tuple_t *tuple, size_t i);
-int64_t tuple_get_i64(tuple_t *tuple, size_t i);
-uint32_t tuple_get_u32(tuple_t *tuple, size_t i);
-uint64_t tuple_get_u64(tuple_t *tuple, size_t i);
-float tuple_get_f32(tuple_t *tuple, size_t i);
-double tuple_get_f64(tuple_t *tuple, size_t i);
-int tuple_get_bool(tuple_t *tuple, size_t i);
-char* tuple_get_string(tuple_t *tuple, size_t i);
-buffer_t tuple_get_binary(tuple_t *tuple, size_t i);
-tuple_t* tuple_get_tuple(tuple_t *tuple, size_t i);
+uint8_t tuple_get_type(const tuple_t *tuple, size_t i);
+int32_t tuple_get_i32(const tuple_t *tuple, size_t i);
+int64_t tuple_get_i64(const tuple_t *tuple, size_t i);
+uint32_t tuple_get_u32(const tuple_t *tuple, size_t i);
+uint64_t tuple_get_u64(const tuple_t *tuple, size_t i);
+float tuple_get_f32(const tuple_t *tuple, size_t i);
+double tuple_get_f64(const tuple_t *tuple, size_t i);
+int tuple_get_bool(const tuple_t *tuple, size_t i);
+char* tuple_get_string(const tuple_t *tuple, size_t i);
+buffer_t tuple_get_binary(const tuple_t *tuple, size_t i);
+tuple_t* tuple_get_tuple(const tuple_t *tuple, size_t i);
 
 void tuple_set_i32(tuple_t *tuple, size_t i, int32_t v);
 void tuple_set_i64(tuple_t *tuple, size_t i, int64_t v);

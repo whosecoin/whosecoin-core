@@ -231,62 +231,62 @@ void tuple_write_end(dynamic_buffer_t *file) {
     dynamic_buffer_putc(TUPLE_END, file);
 }
 
-uint8_t tuple_get_type(tuple_t *tuple, size_t i) {
+uint8_t tuple_get_type(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     return *element;
 }
 
-int32_t tuple_get_i32(tuple_t *tuple, size_t i) {
+int32_t tuple_get_i32(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_I32);
     uint8_t *value = element + 1;
     return ntohl(((int32_t*)value)[0]);
 }
 
-int64_t tuple_get_i64(tuple_t *tuple, size_t i) {
+int64_t tuple_get_i64(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_I64);
     uint8_t *value = element + 1;
     return ntohll(((int64_t*)value)[0]);  
 }
 
-uint32_t tuple_get_u32(tuple_t *tuple, size_t i) {
+uint32_t tuple_get_u32(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_U32);
     uint8_t *value = element + 1;
     return ntohl(((uint32_t*)value)[0]);  
 }
-uint64_t tuple_get_u64(tuple_t *tuple, size_t i) {
+uint64_t tuple_get_u64(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_U64);
     uint8_t *value = element + 1;
     return ntohll(((uint64_t*)value)[0]);  
 }
-float tuple_get_f32(tuple_t *tuple, size_t i) {
+float tuple_get_f32(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_F32);
     uint8_t *value = element + 1;
     return ((float*)value)[0];  
 }
-double tuple_get_f64(tuple_t *tuple, size_t i) {
+double tuple_get_f64(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_F64);
     uint8_t *value = element + 1;
     return ((double*)value)[0];  
 }
-int tuple_get_boolean(tuple_t *tuple, size_t i) {
+int tuple_get_boolean(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_BOOL);
     uint8_t *value = element + 1;
     return ((uint8_t*)value)[0];  
 }
-char* tuple_get_string(tuple_t *tuple, size_t i) {
+char* tuple_get_string(const tuple_t *tuple, size_t i) {
     char *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_STRING);
     return element + 1;
 }
 
-buffer_t tuple_get_binary(tuple_t *tuple, size_t i) {
+buffer_t tuple_get_binary(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_BINARY);
     uint32_t *size = (uint32_t*)(element + 1);
@@ -294,7 +294,7 @@ buffer_t tuple_get_binary(tuple_t *tuple, size_t i) {
     return (buffer_t) {*size, data};
 }
 
-tuple_t* tuple_get_tuple(tuple_t *tuple, size_t i) {
+tuple_t* tuple_get_tuple(const tuple_t *tuple, size_t i) {
     uint8_t *element = list_get(tuple->elements, i);
     assert(*element == TUPLE_START);
     return (tuple_t*)element;

@@ -37,7 +37,7 @@ map_t* map_create(
  * @param map the map
  * @return the number of entries.
  */
-size_t map_size(map_t *map);
+size_t map_size(const map_t *map);
 
 /**
  * Return the value with the given key, or NULL if no such entry exists.
@@ -48,7 +48,7 @@ size_t map_size(map_t *map);
  * @param key the key to query.
  * @return the value or NULL.
  */
-void* map_get(map_t *map, void *key);
+void* map_get(const map_t *map, const void *key);
 
 /**
  * Create a new entry with the given key and value. If the key already exists
@@ -70,7 +70,7 @@ void* map_set(map_t *map, void *key, void *value);
  * @param map the map
  * @param key the key
  */
-void* map_remove(map_t *map, void *key);
+void* map_remove(map_t *map, const void *key);
 
 /**
  * Destroy the map, and all keys and values contained in the map using the

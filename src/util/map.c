@@ -43,7 +43,7 @@ static size_t map_get_bucket(map_t *map, void *key) {
     return hash % map->n_buckets;
 }
 
-size_t map_size(map_t *map) {
+size_t map_size(const map_t *map) {
     return map->size;
 }
 
@@ -61,7 +61,7 @@ map_t* map_create(size_t n_buckets, hash_t hash, destructor_t destroy_key, destr
 }
 
 
-static entry_t* map_get_entry(map_t *map, void *key) {
+static entry_t* map_get_entry(const map_t *map, const void *key) {
     size_t bi = map_get_bucket(map, key);
     list_t *bucket = map->buckets[bi];
     if (bucket == NULL) return NULL;
@@ -71,7 +71,7 @@ static entry_t* map_get_entry(map_t *map, void *key) {
     return list_get(bucket, ei);
 }
 
-void* map_get(map_t *map, void *key) {
+void* map_get(const map_t *map, const void *key) {
     entry_t *e = map_get_entry(map, key);
     if (e == NULL) return NULL;
     return e->val;
@@ -111,7 +111,7 @@ void* map_set(map_t *map, void *key, void *val) {
 }
 
 
-void* map_remove(map_t *map, void *key) {
+void* map_remove(map_t *map, const void *key) {
     assert(map != NULL);
     size_t bi = map_get_bucket(map, key);
     list_t *bucket = map->buckets[bi];

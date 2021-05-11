@@ -8,5 +8,4 @@
 void message_history_add(guid_t guid);
 int message_history_has(guid_t guid);
 
-
 #endif /* MESSAGE_HISTORY_H */

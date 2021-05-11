@@ -25,11 +25,11 @@ static int compare(void *h1, void *h2) {
 }
 
 static size_t hash_priority(void *h) {
-    return *(size_t*)((char *) h + crypto_vrf_OUTPUTBYTES - sizeof(size_t));
+    return *(size_t*)((char *) h + crypto_generichash_BYTES - sizeof(size_t));
 }
 
 static int compare_priority(void *h1, void *h2) {
-    return memcmp(h1, h2, crypto_vrf_OUTPUTBYTES);
+    return memcmp(h1, h2, crypto_generichash_BYTES);
 }
 
 blockchain_t *blockchain_create(void (*on_extended)(block_t*, block_t*)) {
@@ -71,7 +71,7 @@ bool blockchain_add_block(blockchain_t *bc, block_t *block) {
         bc->principal = block;
         bc->on_extended(prev, bc->principal);
     } else if (block_get_prev(block) == block_get_prev(bc->principal)) {
-        if (memcmp(block_get_priority(block), block_get_priority(bc->principal), crypto_vrf_OUTPUTBYTES) < 0) {
+        if (memcmp(block_get_priority(block), block_get_priority(bc->principal), crypto_generichash_BYTES) < 0) {
             block_t *prev = bc->principal;
             bc->principal = block;
             bc->on_extended(prev, bc->principal);
@@ -84,7 +84,7 @@ bool blockchain_add_block(blockchain_t *bc, block_t *block) {
             iter = block_get_prev(iter);
         }
         if (block_get_prev(block) == iter) {
-            if (memcmp(block_get_priority(block), block_get_priority(prev), crypto_vrf_OUTPUTBYTES) < 0) {
+            if (memcmp(block_get_priority(block), block_get_priority(prev), crypto_generichash_BYTES) < 0) {
                 block_t *prev = bc->principal;
                 bc->principal = block;
                 bc->on_extended(prev, bc->principal);

@@ -77,6 +77,7 @@
         "crypto_stream_salsa20.h": "c",
         "crypto_verify_64.h": "c",
         "randombytes_sysrandom.h": "c",
-        "runtime.h": "c"
+        "runtime.h": "c",
+        "http.h": "c"
     }
 }

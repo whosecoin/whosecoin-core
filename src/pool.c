@@ -37,7 +37,7 @@ void pool_add(pool_t *pool, transaction_t *txn) {
     assert(pool != NULL);
     assert(txn != NULL);
     size_t i = list_find(pool->list, txn, (compare_t) transaction_compare);
-    if (i == list_size(pool->list)) {
+    if (i != list_size(pool->list)) {
         transaction_destroy(txn);
     } else {
         list_add(pool->list, txn);

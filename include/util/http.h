@@ -17,6 +17,12 @@ int response_get_code(response_t *res);
 dynamic_buffer_t* response_get_body(response_t *res);
 void response_destroy(response_t *res);
 
-char* http_reason_phrase(int status_code);
+typedef struct http http_t;
+typedef void (*http_handler)(request_t *req, response_t *res);
+
+http_t *http_create();
+void http_register(http_t *http, char *pattern, http_handler handler);
+void http_listen(http_t *http, int port);
+void http_destroy(http_t *http);
 
 #endif /* HTTP_H */

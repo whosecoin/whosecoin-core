@@ -47,6 +47,8 @@ uint8_t* block_get_public_key(block_t *block);
  */
 bool block_has_ancestor(block_t *block, block_t *ancestor);
 
+block_t* block_get_child_with_public_key(block_t *block, uint8_t *pk);
+
 /**
  * Return the timestamp field of the specified block.
  * 
@@ -56,6 +58,8 @@ bool block_has_ancestor(block_t *block, block_t *ancestor);
 uint64_t block_get_timestamp(block_t *block);
 
 uint8_t* block_get_priority(block_t *block);
+
+bool is_staking_allowed(const block_t *block, const uint8_t *public_key);
 
 /**
  * Return the hash of the block header.
