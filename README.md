@@ -6,7 +6,7 @@ tuple   ::= "(" e_list ")"
 e_list  ::= element e_list
           | ""
 
-element ::= "(" tuple ")"   // nested tuple
+element ::= tuple           // nested tuple
           | "i" int32_t     // big-endian 32-bit signed integer
           | "I" int64_t     // big-endian 64-bit signed integer
           | "u" uint32_t    // big-endian 32-bit unsigned integer
