@@ -1,31 +1,67 @@
 #include <uv.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include <network.h>
 #include <message.h>
 #include <settings.h>
-#include <message_history.h>
+
 #include "util/buffer.h"
 #include "util/list.h"
 
-uv_loop_t *loop;
-uv_tcp_t server;
-
-event_handler_t handlers[EVENT_COUNT];
+typedef struct network {
+    uv_tcp_t server;
+    event_handler_t handlers[EVENT_COUNT];
+    list_t *peers;
+    list_t *message_history
+} network_t;
 
 typedef struct peer {
+    network_t *server;
     uv_tcp_t *socket;
     char addr[16];
     int port;
-    uint8_t *text;
-    size_t text_len;
+    dynamic_buffer_t buf;
+    void *data;
+    void (*free_data)();
 } peer_t;
 
-list_t *peers;
 
-void network_init() {
-    peers = list_create(1);
+#define MESSAGE_HISTORY_SIZE 1024
+
+static int message_history_compare(guid_t *a, guid_t *b) {
+    return guid_compare(*a, *b);
 }
+
+static void message_history_add(network_t *self, guid_t guid) {
+    guid_t *data = malloc(sizeof(guid_t));
+    memcpy(data, &guid, sizeof(guid_t));
+    if (list_size(self->message_history) >= MESSAGE_HISTORY_SIZE) {
+        guid_t *old = list_remove(self->message_history, 0);
+        free(old);
+    }
+    list_add(self->message_history, data);
+}
+
+static int message_history_has(network_t *self, guid_t guid) {
+    return list_find(self->message_history, &guid, message_history_compare);
+}
+
+network_t* network_create() {
+    network_t *res = calloc(1, sizeof(network_t));
+    assert (res != NULL);
+    res->peers = list_create(1);
+    uv_tcp_init(uv_default_loop(), &res->server);
+    res->server.data = res;
+    res->message_history = list_create(MESSAGE_HISTORY_SIZE);
+    return res;
+}
+
+void network_destroy(network_t *self) {
+    list_destroy(self->message_history, free);
+    free(self);
+}
+
 
 /*
  * The shared_buffer_t struct is a reference
@@ -74,17 +110,17 @@ void peer_set_port(peer_t *peer, int port) {
     peer->port = port;
 }
 
-size_t network_peer_count() {
-    return list_size(peers);
+size_t network_peer_count(network_t *self) {
+    return list_size(self->peers);
 }
 
-peer_t *network_get_peer(size_t i) {
-    return list_get(peers, i);
+peer_t *network_get_peer(network_t *self, size_t i) {
+    return list_get(self->peers, i);
 }
 
-int network_has_peer(char *addr, int port) {
-    for (size_t i = 0; i < list_size(peers); i++) {
-        peer_t *peer = list_get(peers, i);
+int network_has_peer(network_t *self, char *addr, int port) {
+    for (size_t i = 0; i < list_size(self->peers); i++) {
+        peer_t *peer = list_get(self->peers, i);
         char *peer_addr = peer_get_addr(peer);
         int peer_port = peer_get_port(peer);
         if (strcmp(addr, peer_addr) == 0 && port == peer_port) return 1;
@@ -117,11 +153,11 @@ static void on_write(uv_write_t* wreq, int status) {
  * @param message the message to send
  * @param len the length of the message in bytes
  */
-static void broadcast_message(uint8_t *message, int len) {
+static void broadcast_message(network_t *self, uint8_t *message, int len) {
     struct shared_buffer_t *buf = shared_buffer_create(message, len);
     shared_buffer_retain(buf);
-    for (size_t i = 0; i < list_size(peers); i++) {
-        peer_t *peer = list_get(peers, i);
+    for (size_t i = 0; i < list_size(self->peers); i++) {
+        peer_t *peer = list_get(self->peers, i);
         struct write_context_t *req = (struct write_context_t*) malloc(sizeof(struct write_context_t));
         req->buf = buf;
         shared_buffer_retain(buf);
@@ -138,7 +174,7 @@ static void send_message(uint8_t *message, int len, peer_t *peer) {
     uv_write((uv_write_t*) req, (uv_stream_t*) peer->socket, &(req->buf->data), 1, on_write);
 }
 
-void network_broadcast(uint32_t type, buffer_t *buffer) {
+void network_broadcast(network_t *self, uint32_t type, buffer_t *buffer) {
     uint8_t message[MESSAGE_HEADER_SIZE + buffer->length];
     guid_t guid = guid_new();
     message_set_magic(message, MESSAGE_MAGIC_NUMBER);
@@ -147,11 +183,11 @@ void network_broadcast(uint32_t type, buffer_t *buffer) {
     message_set_type(message, type);
     memcpy(message + MESSAGE_HEADER_SIZE, buffer->data, buffer->length);
 
-    message_history_add(guid);
-    broadcast_message(message, MESSAGE_HEADER_SIZE + buffer->length);
+    message_history_add(self, guid);
+    broadcast_message(self, message, MESSAGE_HEADER_SIZE + buffer->length);
 }
 
-void network_send(uint32_t event, buffer_t *buffer, peer_t *peer) {
+void network_send(network_t *self, uint32_t event, buffer_t *buffer, peer_t *peer) {
     uint8_t message[MESSAGE_HEADER_SIZE + buffer->length];
     guid_t guid = guid_null();
     message_set_magic(message, MESSAGE_MAGIC_NUMBER);
@@ -160,35 +196,36 @@ void network_send(uint32_t event, buffer_t *buffer, peer_t *peer) {
     message_set_type(message, event);
     memcpy(message + MESSAGE_HEADER_SIZE, buffer->data, buffer->length);
 
-    message_history_add(guid);
+    message_history_add(self, guid);
     send_message(message, MESSAGE_HEADER_SIZE + buffer->length, peer);
 }
 
-static void handle_message(uv_tcp_t *peer, uint8_t *message, size_t len) {
+static void handle_message(peer_t *peer, uint8_t *message, size_t len) {
+    network_t *self = peer->server;
     guid_t guid = message_get_guid(message);
     uint32_t length = message_get_length(message);
     uint16_t type = message_get_type(message);
     uint8_t *payload = message + MESSAGE_HEADER_SIZE;
     buffer_t buffer = {length, payload};
     if (guid_is_null(guid)) {
-        if (type < EVENT_COUNT && handlers[type]) {
+        if (type < EVENT_COUNT && self->handlers[type]) {
             tuple_t *tuple = tuple_parse(&buffer);
-            handlers[type]((peer_t *) peer->data, tuple);
+            self->handlers[type](peer, tuple);
             tuple_destroy(tuple);
         }
-    } else if (!message_history_has(guid)) {
-        if (type < EVENT_COUNT && handlers[type]) {
+    } else if (!message_history_has(self, guid)) {
+        if (type < EVENT_COUNT && self->handlers[type]) {
             tuple_t *tuple = tuple_parse(&buffer);
-            handlers[type]((peer_t *) peer->data, tuple);
+            self->handlers[type](peer, tuple);
             tuple_destroy(tuple);
         }
-        message_history_add(guid);
-        broadcast_message(message, len);
+        message_history_add(self, guid);
+        broadcast_message(self, message, len);
     }
 }
 
 /* Allocate buffers as requested by UV */
-static void alloc_read_buffer(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
+static void on_alloc(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
     char *base = (char *) calloc(1, size);
     if (!base) {
         *buf = uv_buf_init(NULL, 0);
@@ -199,17 +236,26 @@ static void alloc_read_buffer(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
 
 static void on_socket_closed(uv_handle_t *socket) {
     peer_t *peer = socket->data;
-    if (handlers[EVENT_DISCONNECT]) handlers[EVENT_DISCONNECT](peer, NULL);
-    size_t index = list_find(peers, socket->data, NULL);
-    if (index != list_size(peers)) list_remove(peers, index);
-    free(peer->text);
+    network_t *server = peer->server;
+    if (server->handlers[EVENT_DISCONNECT]) server->handlers[EVENT_DISCONNECT](peer, NULL);
+    size_t index = list_find(server->peers, socket->data, NULL);
+    if (index != list_size(server->peers)) list_remove(server->peers, index);
+    dynamic_buffer_destroy(peer->buf);
+    if (peer->free_data) peer->free_data(peer->data);
     free(peer);
     free(socket);
 }
 
-void network_disconnect(peer_t *peer) {
+void network_disconnect(network_t *self, peer_t *peer) {
     if (!peer) return;
     uv_close((uv_handle_t*) peer->socket, on_socket_closed);
+}
+
+uint8_t* find_message_start(dynamic_buffer_t *buf) {
+    for (size_t i = 0; i < buf->length - MESSAGE_HEADER_SIZE + 1; i++) {
+        if (message_get_magic(buf->data + i) == MESSAGE_MAGIC_NUMBER) return buf->data + i;
+    }
+    return NULL;
 }
 
 /* 
@@ -225,8 +271,7 @@ void network_disconnect(peer_t *peer) {
  */
 static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     
-    uv_tcp_t *client = (uv_tcp_t *)stream;
-    peer_t *data = stream->data;
+    peer_t *peer = stream->data;
 
     /*
      * If an error occured while reading, we should cleanup any allocated
@@ -234,137 +279,114 @@ static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
      */
     if (nread < 0) {
         free(buf->base);
-        network_disconnect(data);
+        network_disconnect(peer->server, peer);
         return;
     }
 
-    /*
-     * Stores data stream as dynamically sized string.
-     * Every time the server recieves more data from the stream,
-     * it appends the data to the string and updates the size.
-     * 
-     * We concatenate a '\0' character to the end of the string
-     * so that we can use string processing functions such as strstr provided
-     * by the standard library.
-     */
-    if (!data->text) {
-        data->text = malloc(nread + 1);
-        memcpy(data->text, buf->base, nread);
-        data->text_len = nread;
-        data->text[data->text_len] = '\0';
-    } else {
-        data->text = realloc(data->text, data->text_len + nread + 1);
-        memcpy(data->text + data->text_len, buf->base, nread);
-        data->text_len += nread;
-        data->text[data->text_len] = '\0';
-    }
-
+    /* concatenate data packet onto the peer read buffer */
+    dynamic_buffer_write(buf->base, buf->len, &peer->buf);
     free(buf->base);
 
-    /*
-     * We will iterate over all messages currently stored in the buffer and
-     * handle them one by one.
-     */
-    uint8_t *text_end = data->text + data->text_len;
-    uint8_t *message_start = data->text;
-    while (message_start + 2 * sizeof(uint32_t) <= text_end) {
-        
-        /* parse fields from message header */
-        uint32_t magic = message_get_magic(message_start);
-        uint32_t payload_len = message_get_length(message_start);
-        uint32_t message_len = MESSAGE_HEADER_SIZE + payload_len;
+    uint8_t *start = find_message_start(&peer->buf);
+    while (start != NULL) {
 
-        /* 
-         * If the first field is not the magic number, skip ahead until the
-         * start of the next message is found.
-         */
-        if (magic != MESSAGE_MAGIC_NUMBER) {
-            message_start += sizeof(uint32_t);
-            continue;
-        }
+        // splice out any bytes that occur before the magic number
+        size_t padding = (size_t) start - (size_t) peer->buf.data;
+        memmove(peer->buf.data, start, peer->buf.length - padding);
+        peer->buf.length -= padding;
 
-        /*
-         * If the entirety of the current message is not contained in the buffer,
-         * then we should wait for more data to process the message.
-         */
-        if (message_start + message_len > text_end) {
-            break;
-        }
+        // parse message header fields
+        guid_t guid = message_get_guid(peer->buf.data);
+        uint32_t length = message_get_length(peer->buf.data);
+        uint16_t type = message_get_type(peer->buf.data);
+        guid_print(guid);
 
-        handle_message(client, message_start, message_len);
-        message_start += message_len;
+        // wait for more data until we recieve the entire message body
+        size_t message_length = MESSAGE_HEADER_SIZE + length;
+        if (peer->buf.length < message_length) return;
+
+        // handle the message 
+        handle_message(peer, peer->buf.data, message_length);
+
+        // splice out the message from the peer buffer
+        memmove(peer->buf.data, peer->buf.data + message_length, peer->buf.length - message_length);
+        peer->buf.length -= message_length;
+
+        start = find_message_start(&peer->buf);
     }
 
-    /*
-     * Copy all unprocessed bytes into a newly allocated buffer
-     * and free all processed data.
-     */
-    if (message_start != data->text) {
-        int remainder_len = text_end - message_start;
-        uint8_t *remainder = (uint8_t *) malloc(remainder_len);
-        memcpy(remainder, message_start, remainder_len);
-        free(data->text);
-        data->text = remainder;
-        data->text_len = remainder_len;
-    }
 }
 
-void create_peer_from_tcp_socket(uv_tcp_t *socket) {
+void create_peer_from_tcp_socket(network_t *self, uv_tcp_t *socket, void *data, void (*free_data)(void*)) {
     struct sockaddr_in addr;
     uv_tcp_getpeername(socket, (struct sockaddr *) &addr, &(int){sizeof(addr)});
     
     peer_t *peer = calloc(1, sizeof(peer_t));
+    peer->server = self;
     peer->socket = socket;
     strcpy(peer->addr, inet_ntoa(addr.sin_addr));
-    peer->port = 0;
+    peer->port = addr.sin_port;
+    peer->data = data;
+    peer->free_data = free_data;
+    peer->buf = dynamic_buffer_create(32);
     socket->data = peer;
-    list_add(peers, peer);
+    list_add(self->peers, peer);
 
-    uv_read_start((uv_stream_t *)socket, alloc_read_buffer, on_read);
+    uv_read_start((uv_stream_t *)socket, on_alloc, on_read);
 
 }
 
 /* Callback for handling the new connection */
 static void on_incoming_connection(uv_stream_t *server, int status) {
     
+    network_t *self = server->data;
+
     if (status != 0) {
         printf("error: incoming connection: %s\n", uv_strerror(status));
         return;
     }
 
     uv_tcp_t *socket = (uv_tcp_t *) calloc(1, sizeof(uv_tcp_t));
-    uv_tcp_init(loop, socket);
+    uv_tcp_init(uv_default_loop(), socket);
     
     if (uv_accept(server, (uv_stream_t *)socket) == 0) {
-        create_peer_from_tcp_socket(socket);
-        if (handlers[EVENT_CONNECT]) handlers[EVENT_CONNECT]((peer_t *) socket->data, NULL);
+        create_peer_from_tcp_socket(self, socket, NULL, NULL);
+        if (self->handlers[EVENT_CONNECT]) self->handlers[EVENT_CONNECT]((peer_t *) socket->data, NULL);
     } else {
         printf("connection error\n");
         free(socket);
     }
 }
 
-void network_register(uint32_t event, event_handler_t handler) {
-    handlers[event] = handler;
+void network_register(network_t *self, uint32_t event, event_handler_t handler) {
+    self->handlers[event] = handler;
 }
 
 
+typedef struct connect_ctx {
+    void *data;
+    void (*free_data)(void*);
+    network_t *server;
+    struct sockaddr_in *peer_addr;
+} connect_ctx_t;
+
 void on_outgoing_connection(uv_connect_t* connection, int status) {
     
+    connect_ctx_t *ctx = connection->data;
+
     if (status != 0) {
         struct sockaddr_in *addr = connection->data;
         printf("error: unable to connect to %s:%d\n", inet_ntoa(addr->sin_addr), ntohs(addr->sin_port));
-        free(connection->data);
-        free(connection);
-        return;
+        if (ctx->free_data) ctx->free_data(ctx->data);
+    } else {
+        uv_tcp_t* socket = (uv_tcp_t *) connection->handle;
+        create_peer_from_tcp_socket(ctx->server, socket, ctx->data, ctx->free_data);
+        if (ctx->server->handlers[EVENT_CONNECT]) ctx->server->handlers[EVENT_CONNECT]((peer_t *) socket->data, NULL);
     }
 
-    uv_tcp_t* socket = (uv_tcp_t *) connection->handle;
     free(connection->data);
     free(connection);
 
-    create_peer_from_tcp_socket(socket);
-    if (handlers[EVENT_CONNECT]) handlers[EVENT_CONNECT]((peer_t *) socket->data, NULL);
 }
 
 /**
@@ -375,18 +397,24 @@ void on_outgoing_connection(uv_connect_t* connection, int status) {
  * @param address the ipv4 address of the peer
  * @param port the port of the peer's server
  */
-int network_connect(char *address, int port) {
+int network_connect(network_t *self, char *address, int port, void *data, void (*free_data)(void*)) {
     /* allocate socket for connecting to peer */
     uv_tcp_t *socket = malloc(sizeof(uv_tcp_t));
-    uv_tcp_init(loop, socket);
+    uv_tcp_init(uv_default_loop(), socket);
 
     /* connect asynchronously to node with specified address and port */
-    struct sockaddr_in *peer_addr = calloc(1, sizeof(struct sockaddr_in));
-    uv_ip4_addr(address, port, peer_addr);
+    connect_ctx_t *connect_ctx = calloc(1, sizeof(connect_ctx_t));
+    connect_ctx->server = self;
+    connect_ctx->data = data;
+    connect_ctx->free_data = free_data;
+    uv_ip4_addr(address, port, &connect_ctx->peer_addr);
     uv_connect_t *connect = malloc(sizeof(uv_connect_t));
-    connect->data = peer_addr;
-    int err = uv_tcp_connect(connect, socket, (struct sockaddr*) peer_addr, on_outgoing_connection);
-    if (err != 0) free(peer_addr);
+    connect->data = connect_ctx;
+    int err = uv_tcp_connect(connect, socket, (struct sockaddr*) &connect_ctx->peer_addr, on_outgoing_connection);
+    if (err != 0) {
+        if (free_data) free_data(data);
+        free(connect_ctx);
+    }
     return err;
 }
 
@@ -398,10 +426,9 @@ int network_connect(char *address, int port) {
  * @param port the port to listen on
  * @param backlog the size of the backlog queue for incoming connections
  */ 
-int network_listen(int port, int backlog) {
+int network_listen(network_t *self, int port, int backlog) {
     struct sockaddr_in addr;
     uv_ip4_addr("0.0.0.0", settings.port, &addr);
-    uv_tcp_init(loop, &server);
-    uv_tcp_bind(&server, (struct sockaddr *) &addr, 0);
-    return uv_listen((uv_stream_t*) &server, backlog, on_incoming_connection);
+    uv_tcp_bind(self, (struct sockaddr *) &addr, 0);
+    return uv_listen((uv_stream_t*) &self->server, backlog, on_incoming_connection);
 }

@@ -14,7 +14,6 @@
 #include <network.h>
 #include <tuple.h>
 #include <blockchain.h>
-// #include <miner.h>
 #include <pool.h>
 
 #include "util/http.h"
@@ -24,12 +23,13 @@
 #define BLOCK_TIME 3
 #define EPOCH_LENGTH 16
 
-uv_timer_t timer_req;
 
+uv_loop_t *loop;
+uv_timer_t timer_req;
 uv_tty_t tty_in;
 
 blockchain_t *blockchain;
-// miner_t* miner;
+network_t *network;
 pool_t* pool;
 http_t *http;
 
@@ -66,7 +66,7 @@ void broadcast_block(block_t *block) {
     assert(block != NULL);
     dynamic_buffer_t buf = dynamic_buffer_create(64);
     block_write(block, &buf);
-    network_broadcast(EVENT_BLOCK, (buffer_t *) &buf);
+    network_broadcast(network, EVENT_BLOCK, (buffer_t *) &buf);
     dynamic_buffer_destroy(buf);
 }
 
@@ -102,7 +102,7 @@ void synchronize_blockchain(peer_t *peer, block_t *block) {
     tuple_write_start(&buf);
     tuple_write_binary(&buf, crypto_generichash_BYTES, hash);
     tuple_write_end(&buf);
-    network_send(EVENT_BLOCKS_REQUEST, (buffer_t *) &buf, peer);
+    network_send(network, EVENT_BLOCKS_REQUEST, (buffer_t *) &buf, peer);
     dynamic_buffer_destroy(buf);
 }
 
@@ -114,7 +114,7 @@ void synchronize_peers(peer_t *peer) {
     dynamic_buffer_t buf = dynamic_buffer_create(32);
     tuple_write_start(&buf);
     tuple_write_end(&buf);
-    network_send(EVENT_PEERS_REQUEST, (buffer_t*) &buf, peer);
+    network_send(network, EVENT_PEERS_REQUEST, (buffer_t*) &buf, peer);
     dynamic_buffer_destroy(buf);
 }
 
@@ -126,7 +126,7 @@ void synchronize_pool(peer_t *peer) {
     dynamic_buffer_t buf = dynamic_buffer_create(32);
     tuple_write_start(&buf);
     tuple_write_end(&buf);
-    network_send(EVENT_POOL_REQUEST, (buffer_t*) &buf, peer);
+    network_send(network, EVENT_POOL_REQUEST, (buffer_t*) &buf, peer);
     dynamic_buffer_destroy(buf);
 }
 
@@ -137,7 +137,7 @@ void on_connect(peer_t *peer, tuple_t *msg) {
     tuple_write_i32(&buf, settings.port);
     tuple_write_string(&buf, VERSION_STRING);
     tuple_write_end(&buf);
-    network_send(EVENT_HANDSHAKE, (buffer_t*) &buf, peer);
+    network_send(network, EVENT_HANDSHAKE, (buffer_t*) &buf, peer);
     dynamic_buffer_destroy(buf);
 
     synchronize_peers(peer);
@@ -151,8 +151,8 @@ void on_handshake(peer_t *peer, tuple_t *msg) {
     // from the node immediately without printing out any messages.
     char *addr = peer_get_addr(peer);
     int32_t port = tuple_get_i32(msg, 0); 
-    if (network_has_peer(addr, port)) {
-        network_disconnect(peer);
+    if (network_has_peer(network, addr, port)) {
+        network_disconnect(network, peer);
         return;
     }
 
@@ -160,7 +160,7 @@ void on_handshake(peer_t *peer, tuple_t *msg) {
     // should disconnect, but still print out a connection message.
     char *version = tuple_get_string(msg, 1);
     if (strcmp(VERSION_STRING, version) != 0) {
-        network_disconnect(peer);
+        network_disconnect(network, peer);
     }
     
     // Set the port of the peer to the one specified in their handshake.
@@ -188,8 +188,8 @@ void on_peers_request(peer_t *peer, tuple_t *msg) {
 
     dynamic_buffer_t buf = dynamic_buffer_create(32);
     tuple_write_start(&buf);
-    for (size_t i = 0; i < network_peer_count(); i++) {
-        peer_t *p = network_get_peer(i);
+    for (size_t i = 0; i < network_peer_count(network); i++) {
+        peer_t *p = network_get_peer(network, i);
         char *addr = peer_get_addr(p);
         int port = peer_get_port(p);
         if (port <= 0) continue;
@@ -201,7 +201,7 @@ void on_peers_request(peer_t *peer, tuple_t *msg) {
         }
     }
     tuple_write_end(&buf);
-    network_send(EVENT_PEERS_RESPONSE, (buffer_t*) &buf, peer);
+    network_send(network, EVENT_PEERS_RESPONSE, (buffer_t*) &buf, peer);
     dynamic_buffer_destroy(buf);
 }
 
@@ -211,8 +211,8 @@ void on_peers_response(peer_t *peer, tuple_t *msg) {
         tuple_t *peer_tuple = tuple_get_tuple(msg, i);
         char* addr = tuple_get_string(peer_tuple, 0);
         int port = tuple_get_i32(peer_tuple, 1);
-        if (!network_has_peer(addr, port)) {
-            network_connect(addr, port);
+        if (!network_has_peer(network, addr, port)) {
+            network_connect(network, addr, port, NULL, NULL);
         }
     }
 }
@@ -303,7 +303,7 @@ void on_blocks_request(peer_t *peer, tuple_t *msg) {
         iter = block_get_prev(iter);
     }
     tuple_write_end(&buf);
-    network_send(EVENT_BLOCKS_RESPONSE, (buffer_t *) &buf, peer);
+    network_send(network, EVENT_BLOCKS_RESPONSE, (buffer_t *) &buf, peer);
     dynamic_buffer_destroy(buf);
 }
 
@@ -319,7 +319,7 @@ void on_pool_request(peer_t *peer, tuple_t *msg) {
         transaction_write(txn, &buf);
     }
     tuple_write_end(&buf);
-    network_send(EVENT_POOL_RESPONSE, (buffer_t *) &buf, peer);
+    network_send(network, EVENT_POOL_RESPONSE, (buffer_t *) &buf, peer);
     dynamic_buffer_destroy(buf);
 }
 
@@ -557,14 +557,11 @@ int main(int argc, char **argv) {
     uv_read_start((uv_stream_t*)&tty_in, alloc_read_buffer, read_stdin);
 
     blockchain = blockchain_create(on_extended);
-    //miner = miner_create(on_block_mined);
+    network = network_create();
     pool = pool_create();
     
-    //block_set_difficulty(block, compute_difficulty());
-    //miner_mine(miner, block);
 
-    /* create a libuv event loop to manage asynchronous events */
-    network_init();
+    loop = uv_default_loop();
 
     /* 
      * Register signal handler for SIGINT. When the user manually kills the
@@ -591,23 +588,23 @@ int main(int argc, char **argv) {
     for (int i = 0; i < settings.n_peer_connections; i++) {
         char *addr = settings.peer_addresses[i];
         int port = settings.peer_ports[i];
-        int err = network_connect(addr, port);
+        int err = network_connect(network, addr, port, NULL, NULL);
         if (err) {
             printf("error: unable to connect to peer %s:%d\n", addr, port);
         }
     }
  
-    network_register(EVENT_CONNECT, on_connect);
-    network_register(EVENT_DISCONNECT, on_disconnect);
-    network_register(EVENT_HANDSHAKE, on_handshake);
-    network_register(EVENT_PEERS_REQUEST, on_peers_request);
-    network_register(EVENT_PEERS_RESPONSE, on_peers_response);
-    network_register(EVENT_BLOCK, on_block);
-    network_register(EVENT_BLOCKS_REQUEST, on_blocks_request);
-    network_register(EVENT_BLOCKS_RESPONSE, on_blocks_response);
-    network_register(EVENT_POOL_REQUEST, on_pool_request);
-    network_register(EVENT_POOL_RESPONSE, on_pool_response);
-    network_register(EVENT_TRANSACTION, on_transaction);
+    network_register(network, EVENT_CONNECT, on_connect);
+    network_register(network, EVENT_DISCONNECT, on_disconnect);
+    network_register(network, EVENT_HANDSHAKE, on_handshake);
+    network_register(network, EVENT_PEERS_REQUEST, on_peers_request);
+    network_register(network, EVENT_PEERS_RESPONSE, on_peers_response);
+    network_register(network, EVENT_BLOCK, on_block);
+    network_register(network, EVENT_BLOCKS_REQUEST, on_blocks_request);
+    network_register(network, EVENT_BLOCKS_RESPONSE, on_blocks_response);
+    network_register(network, EVENT_POOL_REQUEST, on_pool_request);
+    network_register(network, EVENT_POOL_RESPONSE, on_pool_response);
+    network_register(network, EVENT_TRANSACTION, on_transaction);
 
     /*
      * Listen on the specified port for incoming peer connections. 
@@ -618,7 +615,7 @@ int main(int argc, char **argv) {
      * connection.
      */
     if (settings.should_listen) {
-        int err = network_listen(settings.port, settings.backlog);
+        int err = network_listen(network, settings.port, settings.backlog);
         if (err != 0) {
             printf("error: unable to listen on port %d: %s\n", settings.port, uv_err_name(err));
         } else {
@@ -648,8 +645,8 @@ int main(int argc, char **argv) {
      */
     uv_run(loop, UV_RUN_DEFAULT);
 
-    // miner_destroy(miner);
     blockchain_destroy(blockchain);
     pool_destroy(pool);
     http_destroy(http);
+    network_destroy(network);
 }

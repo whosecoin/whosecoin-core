@@ -78,6 +78,7 @@
         "crypto_verify_64.h": "c",
         "randombytes_sysrandom.h": "c",
         "runtime.h": "c",
-        "http.h": "c"
+        "http.h": "c",
+        "ios": "cpp"
     }
 }

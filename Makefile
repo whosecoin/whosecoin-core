@@ -1,7 +1,7 @@
 CC = clang
 
 CFLAGS = -fsanitize=address -O0 -g -Iinclude -I/usr/local/include -L/usr/local/lib -lsodium -luv  -Wall -Wno-unused-command-line-argument -pthread
-SRC_FILES = tuple util/buffer util/map util/list block transaction blockchain util/guid network message settings message_history pool util/json util/http
+SRC_FILES = util/buffer util/map util/list util/guid util/json util/http block transaction blockchain network message settings pool tuple
 OBJ_FILES = $(addprefix obj/,$(SRC_FILES:=.o))
 
 MAIN = blockchaindb main
