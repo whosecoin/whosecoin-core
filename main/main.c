@@ -166,7 +166,7 @@ void on_handshake(peer_t *peer, tuple_t *msg) {
     // Set the port of the peer to the one specified in their handshake.
     // This is the port on which the peer accepts incoming connections.
     peer_set_port(peer, port);
-    printf("[+] %s:%d\n", peer_get_addr(peer), peer_get_port(peer));
+    // printf("[+] %s:%d\n", peer_get_addr(peer), peer_get_port(peer));
 }
 
 /**
@@ -176,7 +176,7 @@ void on_handshake(peer_t *peer, tuple_t *msg) {
  */
 void on_disconnect(peer_t *peer, tuple_t *msg) {
     if (peer_get_port(peer) > 0) {
-        printf("[-] %s:%d\n", peer_get_addr(peer), peer_get_port(peer));
+        // printf("[-] %s:%d\n", peer_get_addr(peer), peer_get_port(peer));
     }
 }
 
@@ -242,8 +242,6 @@ void on_block(peer_t *peer, tuple_t *msg) {
             block_t *next = block_create(get_public_key(), get_secret_key(), prev, txns); 
             if (next != NULL && blockchain_add_block(blockchain, next)) {
                 broadcast_block(next);
-            }  else {
-                printf("invalid block\n");
             }
         }
 
@@ -280,9 +278,7 @@ void on_blocks_response(peer_t *peer, tuple_t *msg) {
                 block_t *next = block_create(get_public_key(), get_secret_key(), prev, txns); 
                 if (next != NULL && blockchain_add_block(blockchain, next)) {
                     broadcast_block(next);
-                } else {
-                printf("invalid block\n");
-            }
+                }
             }
         }
     }
@@ -363,8 +359,6 @@ void on_timer(uv_timer_t* handle) {
         if (next != NULL) {
             blockchain_add_block(blockchain, next);
             broadcast_block(next);    
-        } else {
-            printf("invalid block\n");
         }
     }   
 }
@@ -542,6 +536,8 @@ void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         }
     } 
     if (buf->base) free(buf->base);
+    printf(">>> ");
+    fflush(stdout);
 }
 
 int main(int argc, char **argv) {
@@ -553,9 +549,7 @@ int main(int argc, char **argv) {
 
     loop = uv_default_loop();
     uv_timer_init(loop, &timer_req);
-    uv_tty_init(loop, &tty_in, STDIN_FILENO, true);
-    uv_read_start((uv_stream_t*)&tty_in, alloc_read_buffer, read_stdin);
-
+    
     blockchain = blockchain_create(on_extended);
     network = network_create();
     pool = pool_create();
@@ -638,7 +632,12 @@ int main(int argc, char **argv) {
         blockchain_add_block(blockchain, block);
         broadcast_block(block);
     }
-    
+
+    uv_tty_init(loop, &tty_in, STDIN_FILENO, true);
+    uv_read_start((uv_stream_t*)&tty_in, alloc_read_buffer, read_stdin);
+    printf(">>> ");
+    fflush(stdout);
+
     /*
      * Start the libuv event loop. This will take complete control over
      * program flow until uv_stop is called.

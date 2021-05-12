@@ -44,7 +44,7 @@ static void message_history_add(network_t *self, guid_t guid) {
 }
 
 static int message_history_has(network_t *self, guid_t guid) {
-    return list_find(self->message_history, &guid, message_history_compare);
+    return list_find(self->message_history, &guid, message_history_compare) != list_size(self->message_history);
 }
 
 network_t* network_create() {
@@ -299,7 +299,6 @@ static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         guid_t guid = message_get_guid(peer->buf.data);
         uint32_t length = message_get_length(peer->buf.data);
         uint16_t type = message_get_type(peer->buf.data);
-        guid_print(guid);
 
         // wait for more data until we recieve the entire message body
         size_t message_length = MESSAGE_HEADER_SIZE + length;

@@ -45,6 +45,11 @@ transaction_t* transaction_create(
  */
 transaction_t* transaction_create_from_tuple(const tuple_t *tuple);
 
+/**
+ * Return true if the tuple type matches the transaction type schema. 
+ * @param tuple the tuple
+ * @return true if the tuple is valid and false otherwise.
+ */
 bool transaction_is_valid(const tuple_t *tuple);
 
 /**

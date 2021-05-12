@@ -304,7 +304,6 @@ uint8_t* block_get_seed(block_t *block) {
 block_t* block_create(const uint8_t *public_key, const uint8_t *private_key, block_t *prev, list_t *txns) {
 
     if (!is_staking_allowed(prev, public_key)) {
-        printf("no staking allowed\n");
         return NULL;
     }
 
@@ -327,7 +326,6 @@ block_t* block_create(const uint8_t *public_key, const uint8_t *private_key, blo
     if (account != NULL) n_delegates = account_get_delegates(account);
     if (n_delegates == 0) {
         free(result);
-        printf("insufficient delegates\n");
         return NULL;
     }
         
@@ -358,7 +356,6 @@ block_t* block_create(const uint8_t *public_key, const uint8_t *private_key, blo
 
     if (!are_transactions_valid(result)) {
         block_destroy(result);
-        printf("invalid transations\n");
         return NULL;
     }
    
@@ -412,7 +409,6 @@ bool block_is_valid(tuple_t *tuple) {
 block_t* block_create_from_tuple(tuple_t *tuple, block_t* (*find)(buffer_t)) {
     assert(tuple != NULL);
     if (!block_is_valid(tuple)) {
-        printf("invalid tuple\n");
         return NULL;
     }
 
@@ -437,7 +433,6 @@ block_t* block_create_from_tuple(tuple_t *tuple, block_t* (*find)(buffer_t)) {
     memcpy(result->signature, signature.data, signature.length);
 
     if (!is_staking_allowed(result->prev_block, result->public_key)) {
-        printf("staking not allowed\n");
         free(result);
         return NULL;
     }
@@ -451,7 +446,6 @@ block_t* block_create_from_tuple(tuple_t *tuple, block_t* (*find)(buffer_t)) {
         result->sortition_seed,
         crypto_generichash_BYTES
     ) != 0) {
-        printf("invalid sortition proof\n");
         free(result);
         return NULL;
     }
@@ -467,7 +461,6 @@ block_t* block_create_from_tuple(tuple_t *tuple, block_t* (*find)(buffer_t)) {
         if (account != NULL) {
             uint32_t n_delegate = account_get_delegates(account);
             if (delegate >= n_delegate) {
-                printf("not enough delegates\n");
                 free(result);
                 return NULL;
             }
@@ -488,14 +481,12 @@ block_t* block_create_from_tuple(tuple_t *tuple, block_t* (*find)(buffer_t)) {
     block_compute_hash(result);
 
     if (crypto_sign_verify_detached(result->signature, result->hash, crypto_sign_PUBLICKEYBYTES, result->public_key) != 0) {
-        printf("invalid block signature\n");
         block_destroy(result);
         return NULL;
     }
 
     if (are_transactions_valid(result) == false) {
         block_destroy(result);
-        printf("invalid transactions\n");
         return NULL;
     }
    
