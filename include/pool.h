@@ -41,13 +41,17 @@ void pool_add(pool_t *pool, transaction_t *txn);
 
 /**
  * Get the transaction at the specified index.
- * 
+ * @param pool the transaction pool.
+ * @param index the transaction index
+ * @return a pointer to the transaction
  */
 transaction_t* pool_get(pool_t *pool, size_t index);
 
 /**
- * 
- * 
+ * Remove and return the transaction with the specified index.
+ * @param pool the transaction pool.
+ * @param index the transaction index.
+ * @return a pointer to the transaction.
  */
 transaction_t* pool_remove(pool_t *pool, size_t index);
 
