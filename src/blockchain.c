@@ -10,7 +10,6 @@
 
 struct blockchain {
     map_t *blocks;
-    map_t *blocks_by_priority;
     map_t *txns;
     block_t *principal;
     void (*on_extended)(block_t*, block_t*);
@@ -36,15 +35,10 @@ blockchain_t *blockchain_create(void (*on_extended)(block_t*, block_t*)) {
     blockchain_t *bc = malloc(sizeof(blockchain_t));
     assert(bc != NULL);
     bc->blocks = map_create(N_BLOCK_BUCKETS, hash, NULL, (destructor_t) block_destroy, compare);
-    bc->blocks_by_priority = map_create(N_BLOCK_BUCKETS, hash_priority, NULL, NULL, compare_priority);
     bc->txns = map_create(N_TXN_BUCKETS, hash, NULL, NULL, compare);
     bc->principal = NULL;
     bc->on_extended = on_extended;
     return bc;
-}
-
-bool blockchain_has_block_with_priority(blockchain_t *bc, uint8_t *priority) {
-    return map_get(bc->blocks_by_priority, priority) != NULL;
 }
 
 bool blockchain_add_block(blockchain_t *bc, block_t *block) {
@@ -54,7 +48,6 @@ bool blockchain_add_block(blockchain_t *bc, block_t *block) {
         return false;
     }
     map_set(bc->blocks, block_get_hash(block), block);
-    map_set(bc->blocks_by_priority, block_get_priority(block), block);
 
     block_t *prev = block_get_prev(block);
     if (prev != NULL) block_add_child(prev, block);
@@ -115,7 +108,6 @@ block_t *blockchain_get_principal(blockchain_t *bc) {
 
 void blockchain_destroy(blockchain_t *bc) {
     map_destroy(bc->blocks);
-    map_destroy(bc->blocks_by_priority);
     map_destroy(bc->txns);
     free(bc);
 }
