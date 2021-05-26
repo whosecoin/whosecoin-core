@@ -32,15 +32,7 @@
       const App = () => (
         <BlocksProvider>
           <ReactRouterDOM.HashRouter>
-            <ul>
-              <li><Link to="/">Home</Link></li>
-              <li><Link to="/blocks">Blocks</Link></li>
-              <li><Link to="/blocks/:hash">Blocks</Link></li>
-              <li><Link to="/register">Register</Link></li>
-            </ul>
-
-            <Route exact path="/" exact component={Home} />
-            <Route exact path="/blocks" component={BlocksPage} />
+            <Route exact path="/" exact component={BlocksPage} />
             <Route exact path="/blocks/:hash" component={BlockPage} />
             <Route exact path="/register" component={Register} />
           </ReactRouterDOM.HashRouter>

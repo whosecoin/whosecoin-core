@@ -15,6 +15,7 @@
 #include <tuple.h>
 #include <blockchain.h>
 #include <pool.h>
+#include <cli.h>
 
 #include "util/http.h"
 #include "util/json.h"
@@ -24,20 +25,19 @@
 #define EPOCH_LENGTH 16
 
 
-uv_loop_t *loop;
 uv_timer_t timer_req;
-uv_tty_t tty_in;
 
 blockchain_t *blockchain;
 network_t *network;
 pool_t* pool;
 http_t *http;
+cli_t *cli;
 
 uint8_t pk[crypto_vrf_PUBLICKEYBYTES];
 uint8_t sk[crypto_vrf_SECRETKEYBYTES];
 
 void on_sigint(uv_signal_t *handle, int signum) {
-    uv_stop(loop);
+    uv_stop(uv_default_loop());
     uv_signal_stop(handle);
     printf("\rinfo: shutting down\n");
 }
@@ -452,15 +452,6 @@ void on_http_block_request(request_t *req, response_t *res) {
     buffer_destroy(hash);
 }
 
-static void alloc_read_buffer(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
-    char *base = (char *) calloc(1, size);
-    if (!base) {
-        *buf = uv_buf_init(NULL, 0);
-    } else {
-        *buf = uv_buf_init(base, size);
-    }
-}
-
 static char* binary_to_hex(const uint8_t *data, size_t size) {
     char* res = calloc(1, size * 2 + 1);
     for (uint8_t i = 0; i < size; i++) {
@@ -480,82 +471,55 @@ static uint8_t* hex_to_binary(const char *data, size_t size) {
     return res;
 } 
 
-void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
-    if (nread == -1) {
-        fprintf(stderr, "Read Error!\n");
+int handle_value_command(void *ctx, list_t *args) {
+    block_t *principal = blockchain_get_principal(blockchain);
+    const account_t *account = block_get_account(principal, get_public_key());
+    if (account != NULL) {
+        uint64_t value = account_get_value(account);
+        printf("%llu\n", value);
+    } else {
+        printf("0\n");
     }
-    else {
-        if (nread > 0) {
-            char command[nread];
-            memcpy(command, buf->base, nread);
-            command[nread - 1] = '\0';
-            
-            if (strstr(command, "value") == command) {
-                block_t *principal = blockchain_get_principal(blockchain);
-                account_t *account = block_get_account(principal, get_public_key());
-                if (account != NULL) {
-                    uint64_t value = account_get_value(account);
-                    printf("%llu\n", value);
-                } else {
-                    printf("0\n");
-                }
-            } else if (strstr(command, "public_key") == command) {
-                uint8_t *pk = get_public_key();
-                char *pk_hex = binary_to_hex(pk, crypto_vrf_PUBLICKEYBYTES);
-                printf("%s\n", pk_hex);
-                free(pk_hex);
-            } else if (strstr(command, "send") == command) {
-                char recipient_hex[2 * crypto_vrf_PUBLICKEYBYTES + 1] = {0};
-                uint64_t value = 0;
-                static_assert(crypto_vrf_PUBLICKEYBYTES == 32, "invalid assumption in scanf");
-                int res = sscanf(command, "send %llu %64s", &value, recipient_hex);
-                if (res == 2) {
-                    uint8_t *recipient = hex_to_binary(recipient_hex, crypto_vrf_PUBLICKEYBYTES);
-                    transaction_t *txn = transaction_create(get_public_key(), get_secret_key(), recipient, value, 0);
-                    if (txn != NULL) {
-                        pool_add(pool, txn);
-                    } else {
-                        printf("invalid transaction\n");
-                    }
-                    free(recipient);
-                }
-            } else if (strstr(command, "pool") == command) {
-                size_t size = pool_size(pool);
-                printf("%d pending transations\n", size);
-                for (size_t i = 0; i < size; i++) {
-                    transaction_t *txn = pool_get(pool, i);
-                    dynamic_buffer_t buf = dynamic_buffer_create(32);
-                    transaction_write_json(txn, &buf);
-                    json_write_end(&buf);
-                    printf("%.*s\n", buf.length, buf.data);
-                    dynamic_buffer_destroy(buf);
-                }
-            } else {
-                printf("unknown command '%s'\n", command);
-            }
-        }
-    } 
-    if (buf->base) free(buf->base);
-    printf(">>> ");
-    fflush(stdout);
+    return 0;
+}
+
+int handle_public_key_command(void *ctx, list_t *args) {
+    uint8_t *pk = get_public_key();
+    char *pk_hex = binary_to_hex(pk, crypto_vrf_PUBLICKEYBYTES);
+    printf("%s\n", pk_hex);
+    free(pk_hex);
+    return 0;
+}
+
+int handle_send_command(void *ctx, list_t *args) {
+    if (list_size(args) != 3) return -1;
+    uint64_t value = atoll(list_get(args, 1));
+    uint8_t *recipient = hex_to_binary(list_get(args, 2), crypto_vrf_PUBLICKEYBYTES);
+    if (recipient == NULL) return -1;
+    transaction_t *txn = transaction_create(get_public_key(), get_secret_key(), recipient, value, 0);
+    if (txn != NULL) pool_add(pool, txn);
+    free(recipient);
+    if (txn == NULL) return -1;
+    else return 0;
+}
+
+int handle_pool_command(void *ctx, list_t *args) {
+    size_t size = pool_size(pool);
+    printf("%zu pending transations\n", size);
+    for (size_t i = 0; i < size; i++) {
+        transaction_t *txn = pool_get(pool, i);
+        dynamic_buffer_t buf = dynamic_buffer_create(32);
+        transaction_write_json(txn, &buf);
+        json_write_end(&buf);
+        printf("%.*s\n", buf.length, buf.data);
+        dynamic_buffer_destroy(buf);
+    }
+    return 0;
 }
 
 int main(int argc, char **argv) {
    
     parse_arguments(argc, argv);
-
-    // generate a new public-private keypair
-    crypto_vrf_keypair(pk, sk);
-
-    loop = uv_default_loop();
-    uv_timer_init(loop, &timer_req);
-    
-    blockchain = blockchain_create(on_extended);
-    network = network_create();
-    pool = pool_create();
-    
-
-    loop = uv_default_loop();
 
     /* 
      * Register signal handler for SIGINT. When the user manually kills the
@@ -568,8 +532,27 @@ int main(int argc, char **argv) {
      * emulates SIGINT whenever the users presses CTRL+C.
      */
     uv_signal_t sig;
-    uv_signal_init(loop, &sig);
+    uv_signal_init(uv_default_loop(), &sig);
     uv_signal_start(&sig, on_sigint, SIGINT);
+
+
+    uv_timer_init(uv_default_loop(), &timer_req);
+    crypto_vrf_keypair(pk, sk);    
+    blockchain = blockchain_create(on_extended);
+    network = network_create();
+    pool = pool_create();
+
+    network_register(network, EVENT_CONNECT, on_connect);
+    network_register(network, EVENT_DISCONNECT, on_disconnect);
+    network_register(network, EVENT_HANDSHAKE, on_handshake);
+    network_register(network, EVENT_PEERS_REQUEST, on_peers_request);
+    network_register(network, EVENT_PEERS_RESPONSE, on_peers_response);
+    network_register(network, EVENT_BLOCK, on_block);
+    network_register(network, EVENT_BLOCKS_REQUEST, on_blocks_request);
+    network_register(network, EVENT_BLOCKS_RESPONSE, on_blocks_response);
+    network_register(network, EVENT_POOL_REQUEST, on_pool_request);
+    network_register(network, EVENT_POOL_RESPONSE, on_pool_response);
+    network_register(network, EVENT_TRANSACTION, on_transaction);
 
     /*
      * Attempt to establish a peer-to-peer connection for each of the
@@ -588,18 +571,6 @@ int main(int argc, char **argv) {
         }
     }
  
-    network_register(network, EVENT_CONNECT, on_connect);
-    network_register(network, EVENT_DISCONNECT, on_disconnect);
-    network_register(network, EVENT_HANDSHAKE, on_handshake);
-    network_register(network, EVENT_PEERS_REQUEST, on_peers_request);
-    network_register(network, EVENT_PEERS_RESPONSE, on_peers_response);
-    network_register(network, EVENT_BLOCK, on_block);
-    network_register(network, EVENT_BLOCKS_REQUEST, on_blocks_request);
-    network_register(network, EVENT_BLOCKS_RESPONSE, on_blocks_response);
-    network_register(network, EVENT_POOL_REQUEST, on_pool_request);
-    network_register(network, EVENT_POOL_RESPONSE, on_pool_response);
-    network_register(network, EVENT_TRANSACTION, on_transaction);
-
     /*
      * Listen on the specified port for incoming peer connections. 
      * 
@@ -626,6 +597,9 @@ int main(int argc, char **argv) {
     http_register(http, "/block/:/", on_http_block_request);
     http_listen(http, 8080);
 
+    /*
+     * Attempt to fork the blockchain.
+     */
     list_t *txns = list_create(1);
     block_t *block = block_create(get_public_key(), get_secret_key(), NULL, txns);
     if (block != NULL) {
@@ -633,19 +607,27 @@ int main(int argc, char **argv) {
         broadcast_block(block);
     }
 
-    uv_tty_init(loop, &tty_in, STDIN_FILENO, true);
-    uv_read_start((uv_stream_t*)&tty_in, alloc_read_buffer, read_stdin);
-    printf(">>> ");
-    fflush(stdout);
+    /**
+     * Initialize command line interface and register command callbacks.
+     */
+    cli = cli_create(NULL, NULL);
+    cli_add_command(cli, "value", "Get current account value", handle_value_command);
+    cli_add_command(cli, "public_key", "Get current public key", handle_public_key_command);
+    cli_add_command(cli, "send", "Send value to recipient", handle_send_command);
+    cli_add_command(cli, "pool", "Get transaction pool info", handle_pool_command);
 
     /*
      * Start the libuv event loop. This will take complete control over
      * program flow until uv_stop is called.
      */
-    uv_run(loop, UV_RUN_DEFAULT);
+    uv_run(uv_default_loop(), UV_RUN_DEFAULT);
 
+    /**
+     * Destroy all subsystems and free associated memory.
+     */
     blockchain_destroy(blockchain);
     pool_destroy(pool);
     http_destroy(http);
     network_destroy(network);
+    cli_destroy(cli);
 }
